@@ -1,7 +1,5 @@
 import numpy as np
-from keras.models import Sequential, Model
-from keras.layers import Dense, LSTM, Input
-import sys,os
+import os,sys
 with open('./data/sample_submission.csv', 'r') as reader:
     i=0
     
@@ -48,4 +46,4 @@ y_train = train[:,-4:]
 
 x_test = test[:,1:]
 
-np.savez('./data/dataset',x_train,y_train,x_test)
+np.savez('./data/dataset',x_train=x_train,y_train=y_train,x_test=x_test)
