@@ -1,9 +1,9 @@
 import numpy as np
 from keras.models import Sequential, Model
-from keras.layers import Dense, LSTM, Input,Flatten
+from keras.layers import Dense, LSTM, Input,Dropout
 from keras.layers.merge import concatenate
 from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, KFold
 import keras.losses
 import sys,os
 
@@ -63,42 +63,58 @@ input_rho = Input(shape=(1,))
 input_src = Input(shape=(35,))
 input_dst = Input(shape=(35,))
 
-dense_rho_1 = Dense(1,activation='relu')(input_rho)
-dense_rho_2 = Dense(1,activation='relu')(dense_rho_1)
-dense_rho_3 = Dense(1,activation='relu')(dense_rho_2)
+skf = KFold()
+accuracy = []
+for train, validation in skf.split(x_train_rho, y_train):
+    
+    dense_rho_1 = Dense(1, activation = 'relu')(input_rho)
 
-dense_src_1 = Dense(1000,activation='relu')(input_src)
-dense_src_2 = Dense(100,activation='relu')(dense_src_1)
-dense_src_3 = Dense(100,activation='relu')(dense_src_2)
+    dense_src_1 = Dense(100, activation = 'relu')(input_src)
+    dense_src_1 = Dropout(0.2)(dense_src_1)
 
-dense_dst_1 = Dense(1000,activation='relu')(input_dst)
-dense_dst_2 = Dense(100,activation='relu')(dense_dst_1)
-dense_dst_3 = Dense(100,activation='relu')(dense_dst_2)
+    dense_src_2 = Dense(100, activation = 'relu')(dense_src_1)
+    dense_src_2 = Dropout(0.2)(dense_src_2)
+    dense_src_3 = Dense(100, activation = 'relu')(dense_src_2)
+    dense_src_3 = Dropout(0.2)(dense_src_3)
 
-merge_srd_dst = concatenate([dense_src_3,dense_dst_3])
+    dense_dst_1 = Dense(100, activation = 'relu')(input_dst)
+    dense_dst_1 = Dropout(0.2)(dense_dst_1)
 
-dense_merge1 = Dense(1000,activation='relu')(merge_srd_dst)
-dense_merge2 = Dense(100,activation='relu')(dense_merge1)
-dense_merge3 = Dense(100,activation='relu')(dense_merge1)
+    dense_dst_2 = Dense(100, activation = 'relu')(dense_dst_1)
+    dense_dst_2 = Dropout(0.2)(dense_dst_2)
 
-merge_all = concatenate([dense_rho_3,dense_merge3])
+    dense_dst_3 = Dense(100, activation = 'relu')(dense_dst_2)
+    dense_dst_3 = Dropout(0.2)(dense_dst_3)
 
-output1 = Dense(1000,activation='relu')(merge_all)
-output2 = Dense(100,activation='relu')(output1)
-output3 = Dense(4)(output2)
+    merge_srd_dst = concatenate([dense_src_3, dense_dst_3])
 
+    dense_merge1 = Dense(100, activation = 'relu')(merge_srd_dst)
 
+    merge_all = concatenate([dense_rho_1, dense_merge1])
 
+    output1 = Dense(100, activation = 'relu')(merge_all)
+    output3 = Dense(4)(output1)
 
-model = Model(inputs=[input_rho,input_src,input_dst],outputs=[output3])
+    model = Model(inputs = [input_rho, input_src, input_dst], outputs = [output3])
+
+    model.compile(loss='mse', optimizer='adam',
+                metrics=['accuracy'])
+
+    # 학습 데이터를 이용해서 학습
+    model.fit([[x_train_rho[train],x_train_src[train],x_train_dst[train]]], y_train[train], epochs=100, batch_size=5)
+
+    # 테스트 데이터를 이용해서 검증
+    k_accuracy = '%.4f' % (model.evaluate([x_train_rho[validation],x_train_src[validation],x_train_dst[validation]], Y[validation])[1])
+    accuracy.append(k_accuracy)
+
 
 # model.add(LSTM(20,activation='tanh',input_shape =(34,3)))
 
 model.summary()
 
-model.compile(optimizer='sgd',loss=keras.losses.mean_absolute_error,metrics=['acc'])
-model.fit([x_train_rho,x_train_src,x_train_dst],y_train,batch_size=50,epochs=50,validation_split=0.25)
+# model.compile(optimizer='sgd',loss=keras.losses.mean_absolute_error,metrics=['acc'])
+# model.fit([x_train_rho,x_train_src,x_train_dst],y_train,batch_size=50,epochs=500,validation_split=0.25)
 
-loss, mse = model.evaluate([x_test_rho,x_test_src,x_test_dst],y_test,batch_size=50)
+# loss, mse = model.evaluate([x_test_rho,x_test_src,x_test_dst],y_test,batch_size=50)
 
-print(f"loss : {loss}\nmse : {mse}")
+# print(f"loss : {loss}\nmse : {mse}")
