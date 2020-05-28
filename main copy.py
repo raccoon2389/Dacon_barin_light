@@ -40,25 +40,24 @@ print(test_dst.head())
 
 train.update(train_dst) # 보간한 데이터를 기존 데이터프레임에 업데이트 한다.
 test.update(test_dst)
-df = pd.DataFrame()
-d = train['rho']
+# df = pd.DataFrame()
+# d = train['rho']
 
-for i in range(650,1000,10):
+# for i in range(650,1000,10):
 
-    train.loc[train[f"{i}_src"]<0.1,f"{i}_src"]=1e-4
-    df = train[f"{i}_dst"]
-    b = train[f"{i}_src"]
-    c = a/(b*d)
-    df[f"{i}"]=c
-print(df.head())
+#     train.loc[train[f"{i}_src"]<0.1,f"{i}_src"]=1e-4
+#     df[f"{i}_dst"] = train[f"{i}_dst"]
+#     df[f"{i}_src"] = train[f"{i}_src"]
+
+# print(df.head())
 
 sclar = StandardScaler()
-sclar.fit(df)
-df = sclar.transform(df)
-print(df.shape)
-col = range(650,1000,10)
+sclar.fit(train)
+df = sclar.transform(train)
+# print(df.shape)
+# col = range(650,1000,10)
 
-x_train = df
+# x_train = df
 
 # train.filter(regex='_src$',axis=1).head().T.plot()
 # plt.figure(figsize=(4,12))test.filter(regex='_src$',axis=1).head().T.plot()
@@ -83,7 +82,7 @@ x_train = df
 
 
 
-# x_train = train_dst
+x_train = train.loc[:,"650_dst":"990_dst"]
 y_train = train.loc[:,'hhb':]
 
 # print(x_train.shape, y_train.shape)
@@ -91,10 +90,9 @@ skf = KFold(n_splits=5,shuffle=True)
 accuracy = []
 for t, v in skf.split(x_train):
     print(t)
-    x_t , y_t = x_train[t], y_train.iloc[t]
-    x_t = x_t.reshape(x_t.shape[0],x_t.shape[1])
+    x_t , y_t = x_train.iloc[t], y_train.iloc[t]
     model = Sequential()
-    model.add(Dense(500,input_shape=(x_t.shape[1],),activation='relu'))
+    model.add(Dense(500,input_shape=(35,),activation='relu'))
     model.add(Dropout(0.1))
     model.add(Dense(100,activation='relu'))
     model.add(Dropout(0.1))
