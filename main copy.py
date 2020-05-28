@@ -11,7 +11,7 @@ na : 나트륨 농도
 
 import numpy as np
 from keras.models import Sequential
-from keras.layers import Dense, Dropout,LSTM
+from keras.layers import Dense, Dropout,LSTM,Input
 from sklearn.model_selection import KFold
 from sklearn.preprocessing import StandardScaler
 import pandas as pd
@@ -91,16 +91,31 @@ accuracy = []
 for t, v in skf.split(x_train):
     print(t)
     x_t , y_t = x_train.iloc[t], y_train.iloc[t]
-    model = Sequential()
-    model.add(Dense(500,input_shape=(35,),activation='relu'))
-    model.add(Dropout(0.1))
-    model.add(Dense(100,activation='relu'))
-    model.add(Dropout(0.1))
-    model.add(Dense(100,activation='relu'))
-    model.add(Dropout(0.1))
-    model.add(Dense(50,activation='relu'))
-    model.add(Dropout(0.1))
 
+    input_rho = Input(shape=(1,))
+    input_src = Input(shape=(35,))
+    input_dst = Input(shape=(35,))
+
+    dense_rho_1 = Dense(1, activation = 'relu')(input_rho)
+
+    dense_src_1 = Dense(100, activation = 'relu')(input_src)
+    dense_src_1 = Dropout(0.2)(dense_src_1)
+
+    dense_src_2 = Dense(100, activation = 'relu')(dense_src_1)
+    dense_src_2 = Dropout(0.2)(dense_src_2)
+    dense_src_3 = Dense(100, activation = 'relu')(dense_src_2)
+    dense_src_3 = Dropout(0.2)(dense_src_3)
+
+    dense_dst_1 = Dense(100, activation = 'relu')(input_dst)
+    dense_dst_1 = Dropout(0.2)(dense_dst_1)
+
+    dense_dst_2 = Dense(100, activation = 'relu')(dense_dst_1)
+    dense_dst_2 = Dropout(0.2)(dense_dst_2)
+
+    dense_dst_3 = Dense(100, activation = 'relu')(dense_dst_2)
+    dense_dst_3 = Dropout(0.2)(dense_dst_3)
+
+    
     # model.add(Dense(50,activation='relu'))
     model.add(Dense(4))
 
