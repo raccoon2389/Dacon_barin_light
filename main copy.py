@@ -1,65 +1,120 @@
+'''
+id : 구분자
+rho : 측정 거리 (단위: mm)
+src : 광원 스펙트럼 (650 nm ~ 990 nm)
+dst : 측정 스펙트럼 (650 nm ~ 990 nm)
+hhb : 디옥시헤모글로빈 농도
+hbo2 : 옥시헤모글로빈 농도
+ca : 칼슘 농도
+na : 나트륨 농도
+'''
+
 import numpy as np
 from keras.models import Sequential
-from keras.layers import Dense, Dropout
+from keras.layers import Dense, Dropout,LSTM
 from sklearn.model_selection import KFold
+from sklearn.preprocessing import StandardScaler
 import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+import missingno as msno
 
-train = pd.read_csv('data/train.csv')
-test = pd.read_csv('data/test.csv')
+train = pd.read_csv('data/train.csv',index_col=0)
+test = pd.read_csv('data/test.csv', index_col=0)
 submission = pd.read_csv('data/sample_submission.csv')
+
+train_dst = train.filter(regex='_dst$', axis=1).replace(0, np.NaN) # dst 데이터만 따로 뺀다.
+test_dst = test.filter(regex='_dst$', axis=1).replace(0, np.NaN) # 보간을 하기위해 결측값을 삭제한다.
+test_dst.head(1)
+
+# print(train_dst)
+
+train_dst = train_dst.interpolate(methods='linear', axis=1)
+test_dst = test_dst.interpolate(methods='linear', axis=1)
+
+# 스팩트럼 데이터에서 보간이 되지 않은 값은 0으로 일괄 처리한다.
+
+train_dst.fillna(0, inplace=True) 
+test_dst.fillna(0, inplace=True)
+print(test_dst.head())
+
+train.update(train_dst) # 보간한 데이터를 기존 데이터프레임에 업데이트 한다.
+test.update(test_dst)
+df = pd.DataFrame()
+d = train['rho']
+
+for i in range(650,1000,10):
+
+    train.loc[train[f"{i}_src"]<0.1,f"{i}_src"]=1e-4
+    df = train[f"{i}_dst"]
+    b = train[f"{i}_src"]
+    c = a/(b*d)
+    df[f"{i}"]=c
+print(df.head())
+
+sclar = StandardScaler()
+sclar.fit(df)
+df = sclar.transform(df)
+print(df.shape)
+col = range(650,1000,10)
+
+x_train = df
+
+# train.filter(regex='_src$',axis=1).head().T.plot()
+# plt.figure(figsize=(4,12))test.filter(regex='_src$',axis=1).head().T.plot()
+# sns.heatmap(train.corr().loc['rho':'990_dst','hhb':].abs())
+# sns.heatmap(train.corr().loc['rho':'990_src','650_dst':'990_dst'].abs())
+# plt.show()
+
 
 # print(train.head())
 # test.head()
+# msno.matrix(train)
+# msno.matrix(test)
+# print(train.isnull().sum()[train.isnull().sum().values > 0])
+# print(train.isnull().sum()[train.isnull().sum().values > 0].index)
 
-x_dst = train.loc[:, '650_dst':'990_dst']
-x_src = train.loc[:,'650_src':'990_src']
-y_train = train.loc[:, 'hhb':'na']
-col = np.arange(650,1000,10)
+# train_dst.head().T.plot()
+# test_dst.head().T.plot()
+# plt.show()
+# print(train_dst.head())
 
-x_dst.columns = col
-x_src.columns = col
-
-# x_dst = x_dst.fillna(x_dst.mean())
-
-# x_src = x_src.fillna(x_src.mean())
-
-# print(x_src.head())
+# print(test_dst.head())
 
 
-x_dst_src = x_dst / x_src
-# print(x_dst.head())
 
-x_dst_src = x_dst_src.replace([np.inf, -np.inf], np.nan).fillna(x_dst_src.mean())
+# x_train = train_dst
+y_train = train.loc[:,'hhb':]
 
-y_train = y_train.replace([np.inf, -np.inf], np.nan).fillna(y_train.mean())
-
-print(y_train)
-'''
-
-x_train = x_dst_src
-
-print(x_train.shape, y_train.shape)
-skf = KFold()
+# print(x_train.shape, y_train.shape)
+skf = KFold(n_splits=5,shuffle=True)
 accuracy = []
-for train, validation in skf.split(x_train):
-    x_t , y_t = x_train.iloc[train], y_train.iloc[train]
-
+for t, v in skf.split(x_train):
+    print(t)
+    x_t , y_t = x_train[t], y_train.iloc[t]
+    x_t = x_t.reshape(x_t.shape[0],x_t.shape[1])
     model = Sequential()
-    model.add(Dense(1000,input_dim=(35),activation='relu'))
+    model.add(Dense(500,input_shape=(x_t.shape[1],),activation='relu'))
+    model.add(Dropout(0.1))
+    model.add(Dense(100,activation='relu'))
+    model.add(Dropout(0.1))
+    model.add(Dense(100,activation='relu'))
+    model.add(Dropout(0.1))
+    model.add(Dense(50,activation='relu'))
+    model.add(Dropout(0.1))
+
     # model.add(Dense(50,activation='relu'))
     model.add(Dense(4))
 
     
-    model.compile(loss='mae', optimizer='adam',
-                metrics=['accuracy'])
+    model.compile(loss='mse', optimizer='adam',metrics=['accuracy'])
 
     # 학습 데이터를 이용해서 학습
-    model.fit(x_t, y_t, epochs=100, batch_size=5)
+    model.fit(x_t, y_t, epochs=100, batch_size=20)
 
     # 테스트 데이터를 이용해서 검증
-    k_accuracy = '%.4f' % (model.evaluate(x_train[validation], y_train[validation])[1])
+    k_accuracy = '%.4f' % (model.evaluate(x_train[v], y_train[v])[1])
     accuracy.append(k_accuracy)
 
 
 print('\nK-fold cross validation Accuracy: {}'.format(accuracy))
-'''
