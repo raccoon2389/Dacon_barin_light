@@ -7,13 +7,17 @@ hhb : 디옥시헤모글로빈 농도
 hbo2 : 옥시헤모글로빈 농도
 ca : 칼슘 농도
 na : 나트륨 농도
+
+
+na 빠진거 모아서 모델링 하고 predict
+
 '''
 
 import numpy as np
 from keras.models import Sequential, Model
 from keras.layers import Dense, Dropout,LSTM,Input
 from sklearn.model_selection import KFold
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import MinMaxScaler
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -22,10 +26,7 @@ from keras.callbacks import EarlyStopping,ModelCheckpoint
 from sklearn.decomposition import PCA
 from keras.layers.merge import concatenate
 from keras.losses import mean_absolute_error
-
-e_stop = EarlyStopping(monitor='loss',patience=30,mode='auto')
-
-m_check = ModelCheckpoint(filepath=".\keras_prac\model\{epoch:02d}--{val_loss:.4f}.hdf5", monitor = 'val_loss',save_best_only=True)
+from sklearn.model_selection import train_test_split
 
 #데이터 추출
 
@@ -33,6 +34,69 @@ train = pd.read_csv('data/train.csv',index_col=0)
 test = pd.read_csv('data/test.csv', index_col=0)
 submission = pd.read_csv('data/sample_submission.csv')
 
+
+
+# print(train.dropna(axis= 0).head())
+
+# print(train.loc[:,'rho'])
+
+# train.dropna(axis=0).filter(regex='_dst$',axis=1).head().T.plot()
+# plt.show()
+'''
+q=0
+for i in range(700,950,10):
+    if i == 700: 
+        tmp = train.loc[train[f"{i-50}_dst"].notnull()&train[f"{i-40}_dst"].notnull()&train[f"{i-30}_dst"].notnull()& train[f"{i-20}_dst"].notnull()& train[f"{i-10}_dst"].notnull() & train[f"{i}_dst"].notnull()& train[f"{i+10}_dst"].notnull()&train[f"{i+20}_dst"].notnull()&train[f"{i+30}_dst"].notnull() &train[f"{i+40}_dst"].notnull()&train[f"{i+50}_dst"].notnull(), f"{i-50}_dst":f"{i+50}_dst"].values
+        print(tmp.shape)
+    else:
+        tmp = np.r_[tmp,train.loc[train[f"{i-50}_dst"].notnull()&train[f"{i-40}_dst"].notnull()&train[f"{i-30}_dst"].notnull()& train[f"{i-20}_dst"].notnull()& train[f"{i-10}_dst"].notnull() & train[f"{i}_dst"].notnull()& train[f"{i+10}_dst"].notnull()&train[f"{i+20}_dst"].notnull()&train[f"{i+30}_dst"].notnull() &train[f"{i+40}_dst"].notnull()&train[f"{i+50}_dst"].notnull(), f"{i-50}_dst":f"{i+50}_dst"].values]
+
+temp=np.zeros(11,)
+
+for i in tmp:
+    if i.sum() !=0:
+        np.array(i).reshape(11,)
+        temp = np.r_[temp,i]
+        print(i)
+
+print(temp)
+
+np.save('./data/temp.npy',arr= temp)
+'''
+
+tmp = np.load('./data/temp.npy')
+tmp = tmp.reshape(-1,11)
+print(tmp.shape)
+
+scaler = MinMaxScaler()
+
+
+pre_x = tmp[:,(0,1,2,3,4,6,7,8,9,10)]
+pre = pre_x[1]
+scaler.fit(pre_x)
+pre_x = scaler.transform(pre_x)
+pre_y = tmp[:,5]
+
+x_train,x_test , y_train, y_test = train_test_split(pre_x,pre_y, test_size=0.2)
+
+print(x_train.shape)
+
+model = Sequential()
+model.add(Dense(30,activation='relu',input_dim=x_train.shape[1]))
+model.add(Dense(20,activation='relu'))
+model.add(Dense(10,activation='relu'))
+model.add(Dense(1))
+
+model.add(Dense(1))
+
+model.compile(optimizer='adam',loss=mean_absolute_error,metrics=['acc'])
+model.fit(x_train,y_train,batch_size=100,epochs=10,validation_split=0.25)
+loss = model.evaluate(x_test,y_test,batch_size=100)
+print(loss)
+pred = model.predict(x_test,batch_size=100)
+print(pre,tmp[1],pred[1])
+
+'''
 #dst와 src 분할
 
 train_dst = train.filter(regex='_dst$', axis=1)
@@ -115,77 +179,4 @@ test.update(test_dst)
 # print(train_dst.head())
 
 # print(test_dst.head())
-
-
-x_train = train.loc[:,'rho':'990_dst']
-x_col = list(x_train)
-print(x_col)
-y_train = train.loc[:,'hhb':]
-y_col = list(y_train)
-sclar = StandardScaler()
-sclar.fit(x_train)
-x_train = sclar.transform(x_train)
-test = test.loc[:,'rho':]
-test =sclar.transform(test)
-x_train = pd.DataFrame(x_train,columns=x_col)
-test = pd.DataFrame(test, columns=x_col)
-
-test_src = test.loc[:,'650_src':'990_src']
-test_rho = test.loc[:,'rho']
-test_dst = test.loc[:,'650_dst':'990_dst']
 '''
-'''
-# print(x_train.shape, y_train.shape)
-skf = KFold(n_splits=5,shuffle=True)
-accuracy = []
-for t, v in skf.split(x_train):
-    x_t , y_t = x_train.iloc[t], y_train.iloc[t]
-    x_v = x_train.iloc[v]
-
-    print(x_t.head())
-    # train_rho = x_t.loc[:,'rho']
-    train_src = x_t.loc[:,'650_src':'990_src']
-    train_dst = x_t.loc[:,'650_dst':'990_dst']
-    # valid_rho = x_v.loc[:,'rho']
-    valid_src = x_v.loc[:,'650_src':'990_src']
-    valid_dst = x_v.loc[:,'650_dst':'990_dst']
-
-    # rho = Input(shape = (1,))
-    dst = Input(shape= (35,))
-    src = Input(shape= (35,))
-
-    dense1 = Dense(100,activation='relu')(dst)
-    dense2 = Dense(100,activation='relu')(src)
-
-
-    dense1 = Dense(100,activation='relu')(dst)
-    dense2 = Dense(100,activation='relu')(src)
-
-    # merge = concatenate([rho,dense1,dense2])
-    merge = concatenate([dense1,dense2])
-
-    output1 = Dense(1000,activation='relu')(merge)
-    output1 = Dense(4)(output1)
-
-    # model = Model(inputs=[rho,src,dst], outputs=[output1])
-    model = Model(inputs=[src,dst], outputs=[output1])
-
-    
-
-
-
-    model.compile(loss=mean_absolute_error, optimizer='adam',metrics=['accuracy'])
-
-    # 학습 데이터를 이용해서 학습
-    # model.fit([train_rho,train_src,train_dst], y_t, epochs=200, batch_size=20)
-    hist = model.fit([train_src,train_dst], y_t, epochs=1000, batch_size=20, callbacks=[e_stop])
-
-    plt.plot(hist.history['loss'])
-    plt.show()
-    # 테스트 데이터를 이용해서 검증
-    # k_accuracy = '%.4f' % (model.evaluate([valid_rho,valid_src,valid_dst], y_train.iloc[v])[1])
-    k_accuracy = '%.4f' % (model.evaluate([valid_src,valid_dst], y_train.iloc[v])[1])
-    accuracy.append(k_accuracy)
-
-
-print('\nK-fold cross validation Accuracy: {}'.format(accuracy))

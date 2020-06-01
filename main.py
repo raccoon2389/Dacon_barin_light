@@ -1,120 +1,266 @@
+'''
+id : 구분자
+rho : 측정 거리 (단위: mm)
+src : 광원 스펙트럼 (650 nm ~ 990 nm)
+dst : 측정 스펙트럼 (650 nm ~ 990 nm)
+hhb : 디옥시헤모글로빈 농도
+hbo2 : 옥시헤모글로빈 농도
+ca : 칼슘 농도
+na : 나트륨 농도
+
+
+na 빠진거 모아서 모델링 하고 predict
+
+'''
+
 import numpy as np
 from keras.models import Sequential, Model
-from keras.layers import Dense, LSTM, Input,Dropout
+from keras.layers import Dense, Dropout,LSTM,Input
+from sklearn.model_selection import KFold
+from sklearn.preprocessing import StandardScaler,RobustScaler,Normalizer,MinMaxScaler #standard : 1.01, Robust,1.5, Normalizer1.7,
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+import missingno as msno
+from keras.callbacks import EarlyStopping,ModelCheckpoint
+from sklearn.decomposition import PCA
 from keras.layers.merge import concatenate
-from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import train_test_split, KFold
-import keras.losses
-import sys,os
+from keras.losses import mean_absolute_error
 
-npload = np.load('./data/dataset.npz')
+e_stop = EarlyStopping(monitor='loss',patience=30,mode='auto')
 
-x_train, y_train, x_pred = npload['x_train'], npload['y_train'], npload['x_test']
+m_check = ModelCheckpoint(filepath=".\keras_prac\model\{epoch:02d}--{val_loss:.4f}.hdf5", monitor = 'val_loss',save_best_only=True)
 
-x_train_rho = np.zeros((10000,1))
-x_train_src = np.zeros((10000,35))
-x_train_dst = np.zeros((10000,35))
+#데이터 추출
 
+train = pd.read_csv('data/train.csv',index_col=0)
+test = pd.read_csv('data/test.csv', index_col=0)
+submission = pd.read_csv('data/sample_submission.csv')
 
+'''
+#dst와 src 분할
 
-print(x_train.shape)
-# x_pred_tmp = np.zeros((100000,34,3))
+train_dst = train.filter(regex='_dst$', axis=1)
+test_dst = test.filter(regex='_dst$', axis=1)
 
-for i in range(10000):
-    x_train_rho[i]= x_train[i,0]
-    x_train_src[i]= x_train[i,1:36]
-    x_train_dst[1]= x_train[i,36:]
+#거리를 제곱해준다.
 
-        # x_pred_tmp[i,c,0]= x_pred[i,0]
-        # x_pred_tmp[i,c,1]= x_pred[i,c+1]
-        # x_pred_tmp[1,c,2]= x_pred[i,c+17]
+dst_list = list(train_dst)
 
-rho_scal = StandardScaler()
-src_scal = StandardScaler()
-dst_scal = StandardScaler()
-rho_scal.fit(x_train_rho)
-src_scal.fit(x_train_src)
-dst_scal.fit(x_train_dst)
-x_train_rho = rho_scal.transform(x_train_rho)
-x_train_src = src_scal.transform(x_train_src)
-x_train_dst = dst_scal.transform(x_train_dst)
+for i in dst_list:
+    train[i] = train[i]* (train['rho']**2)
 
-x_train_rho,x_test_rho, x_train_src,x_test_src,x_train_dst,x_test_dst = train_test_split(x_train_rho,x_train_src,x_train_dst,test_size=0.2,shuffle=True)
+'''
+
+#dst와 src 업데이트
+
+train_dst = train.filter(regex='_dst$', axis=1)
+test_dst = test.filter(regex='_dst$', axis=1)
 
 
 
 
-# x_train = x_train[0:8000,:]
-# x_test = x_train[8000:,:]
-# x_test = x_train[8000:,:]
-# x_test = x_train[8000:,:]
-y_train_tmp = y_train
+# print(train_dst)
 
-y_train = y_train_tmp[0:8000,:]
-y_test = y_train_tmp[8000:,:]
+train_dst = train_dst.interpolate(methods='linear', axis=1)
+test_dst = test_dst.interpolate(methods='linear', axis=1)
+# train_dst.loc[train_dst[f"650_dst"].isnull(),'650_dst']
+print(test_dst.loc[:,'650_dst':].isnull().sum())
 
-#g650_src,660_src,670_src,680_src,690_src,700_src,710_src,720_src,730_src,740_src,750_src,760_src,
-# 770_src,780_src,790_src,800_src,810_src,820_src,830_src,840_src,850_src,860_src,870_src,880_src,890_src,900_src,
-# 910_src,920_src,930_src,940_src,950_src,960_src,970_src,980_src,990_src
-# print(x_train_tmp.shape)
+# print(train_dst.isnull().sum())
 
-# print(x_train.shape)
-input_rho = Input(shape=(1,))
-input_src = Input(shape=(35,))
-input_dst = Input(shape=(35,))
 
-skf = KFold()
+print(train_dst.isnull().sum())
+
+print(test_dst.isnull().sum())
+
+# 스팩트럼 데이터에서 보간이 되지 않은 값은 앞뒤 값의 평균으로 일괄 처리한다.
+
+for i in range(980,640,-10):
+    train_dst.loc[train_dst[f"{i}_dst"].isnull(),f"{i}_dst"]=train_dst.loc[train_dst[f"{i}_dst"].isnull(),f"{i+10}_dst"] 
+    test_dst.loc[test_dst[f"{i}_dst"].isnull(),f"{i}_dst"]=test_dst.loc[test_dst[f"{i}_dst"].isnull(),f"{i+10}_dst"]
+
+
+
+# print(test_dst.head())
+# 
+train.update(train_dst) # 보간한 데이터를 기존 데이터프레임에 업데이트 한다.
+test.update(test_dst)
+# 
+
+
+
+# print(df.shape)
+# col = range(650,1000,10)
+
+# x_train = df
+
+#데이터 분석
+
+# train.filter(regex='_src$',axis=1)[16:20].T.plot()
+# train.filter(regex='_dst$',axis=1)[0:5].T.plot()
+# plt.figure(figsize=(4,12))
+
+# sns.heatmap(train.corr().loc['rho':'990_dst','hhb':].abs())
+# sns.heatmap(train.corr().loc['650_dst':'990_dst','650_src':'990_src'].abs())
+# sns.heatmap(train.corr().loc['650_src':'990_src','650_dst':'990_dst'].abs().plot())
+# plt.show()
+
+
+
+# print(train.head())
+# test.head()
+# msno.matrix(train)
+# msno.matrix(test)
+# print(train.isnull().sum()[train.isnull().sum().values > 0])
+# print(train.isnull().sum()[train.isnull().sum().values > 0].index)
+
+# train_dst.head().T.plot()
+# test_dst.head().T.plot()
+# plt.show()
+# print(train_dst.head())
+
+# print(test_dst.head())
+
+
+x_train = train.loc[:,'rho':'990_dst']
+x_col = list(x_train)
+print(x_col)
+y_train = train.loc[:,'hhb':]
+y_col = list(y_train)
+
+#스케일링
+
+sclar = MinMaxScaler()
+sclar.fit(x_train)
+x_train = sclar.transform(x_train)
+
+
+test = test.loc[:,'rho':]
+test =sclar.transform(test)
+x_train = pd.DataFrame(x_train,columns=x_col)
+test = pd.DataFrame(test, columns=x_col)
+
+test_src = test.loc[:,'650_src':'990_src']
+test_rho = test.loc[:,'rho']
+test_dst = test.loc[:,'650_dst':'990_dst']
+'''
+'''
+i = 0
+# print(x_train.shape, y_train.shape)
+skf = KFold(n_splits=5,shuffle=True)
 accuracy = []
-for train, validation in skf.split(x_train_rho, y_train):
-    
-    dense_rho_1 = Dense(1, activation = 'relu')(input_rho)
+for t, v in skf.split(x_train):
+    x_t , y_t = x_train.iloc[t], y_train.iloc[t]
+    x_v = x_train.iloc[v]
 
-    dense_src_1 = Dense(100, activation = 'relu')(input_src)
-    dense_src_1 = Dropout(0.2)(dense_src_1)
+    #측정거리 포함한 모델링
 
-    dense_src_2 = Dense(100, activation = 'relu')(dense_src_1)
-    dense_src_2 = Dropout(0.2)(dense_src_2)
-    dense_src_3 = Dense(100, activation = 'relu')(dense_src_2)
-    dense_src_3 = Dropout(0.2)(dense_src_3)
+    print(x_t.head())
+    train_rho = x_t.loc[:,'rho']
+    train_src = x_t.loc[:,'650_src':'990_src']
+    train_dst = x_t.loc[:,'650_dst':'990_dst']
+    valid_rho = x_v.loc[:,'rho']
+    valid_src = x_v.loc[:,'650_src':'990_src']
+    valid_dst = x_v.loc[:,'650_dst':'990_dst']
 
-    dense_dst_1 = Dense(100, activation = 'relu')(input_dst)
-    dense_dst_1 = Dropout(0.2)(dense_dst_1)
+    rho = Input(shape = (1,))
+    dst = Input(shape= (35,))
+    src = Input(shape= (35,))
 
-    dense_dst_2 = Dense(100, activation = 'relu')(dense_dst_1)
-    dense_dst_2 = Dropout(0.2)(dense_dst_2)
+    dense1 = Dense(100,activation='relu')(dst)
+    dense1 = Dropout(0.2)(dense1)
 
-    dense_dst_3 = Dense(100, activation = 'relu')(dense_dst_2)
-    dense_dst_3 = Dropout(0.2)(dense_dst_3)
+    dense2 = Dense(100,activation='relu')(src)
+    dense2 = Dropout(0.2)(dense2)
 
-    merge_srd_dst = concatenate([dense_src_3, dense_dst_3])
 
-    dense_merge1 = Dense(100, activation = 'relu')(merge_srd_dst)
+    # dense1 = Dense(100,activation='relu')(dense1)
+    # dense1 = Dropout(0.2)(dense1)
 
-    merge_all = concatenate([dense_rho_1, dense_merge1])
+    # dense2 = Dense(100,activation='relu')(dense2)
+    # dense2 = Dropout(0.2)(dense2)
 
-    output1 = Dense(100, activation = 'relu')(merge_all)
-    output3 = Dense(4)(output1)
+    merge = concatenate([rho,dense1,dense2])
 
-    model = Model(inputs = [input_rho, input_src, input_dst], outputs = [output3])
+    output1 = Dense(1000,activation='relu')(merge)
+    output1 = Dropout(0.2)(output1)
 
-    model.compile(loss='mse', optimizer='adam',
-                metrics=['accuracy'])
+    output1 = Dense(4)(output1)
+
+    model = Model(inputs=[rho,src,dst], outputs=[output1])
+    model.compile(loss=mean_absolute_error, optimizer='adam',metrics=['accuracy'])
 
     # 학습 데이터를 이용해서 학습
-    model.fit([[x_train_rho[train],x_train_src[train],x_train_dst[train]]], y_train[train], epochs=100, batch_size=5)
-
+    hist = model.fit([train_rho,train_src,train_dst], y_t, epochs=200, batch_size=20)
+    model.save(f"./model/{i}.h5")
+    i +=1
+    plt.plot(hist.history['loss'])
+    plt.show()
     # 테스트 데이터를 이용해서 검증
-    k_accuracy = '%.4f' % (model.evaluate([x_train_rho[validation],x_train_src[validation],x_train_dst[validation]], Y[validation])[1])
+    k_accuracy = '%.4f' % (model.evaluate([valid_rho,valid_src,valid_dst], y_train.iloc[v])[1])
     accuracy.append(k_accuracy)
 
+    '''
+    #거리를 제곱해서 변수에서 뺀 모델링
 
-# model.add(LSTM(20,activation='tanh',input_shape =(34,3)))
+    print(x_t.head())
+    # train_rho = x_t.loc[:,'rho']
+    train_src = x_t.loc[:,'650_src':'990_src']
+    train_dst = x_t.loc[:,'650_dst':'990_dst']
+    # valid_rho = x_v.loc[:,'rho']
+    valid_src = x_v.loc[:,'650_src':'990_src']
+    valid_dst = x_v.loc[:,'650_dst':'990_dst']
 
-model.summary()
+    # rho = Input(shape = (1,))
+    dst = Input(shape= (35,))
+    src = Input(shape= (35,))
 
-# model.compile(optimizer='sgd',loss=keras.losses.mean_absolute_error,metrics=['acc'])
-# model.fit([x_train_rho,x_train_src,x_train_dst],y_train,batch_size=50,epochs=500,validation_split=0.25)
+    dense1 = Dense(100,activation='relu')(dst)
+    dense1 = Dropout(0.2)(dense1)
 
-# loss, mse = model.evaluate([x_test_rho,x_test_src,x_test_dst],y_test,batch_size=50)
+    dense2 = Dense(100,activation='relu')(src)
+    dense2 = Dropout(0.2)(dense2)
 
-# print(f"loss : {loss}\nmse : {mse}")
+
+    # dense1 = Dense(100,activation='relu')(dense1)
+    # dense1 = Dropout(0.2)(dense1)
+
+    # dense2 = Dense(100,activation='relu')(dense2)
+    # dense2 = Dropout(0.2)(dense2)
+
+    # merge = concatenate([rho,dense1,dense2])
+    merge = concatenate([dense1,dense2])
+
+    output1 = Dense(1000,activation='relu')(merge)
+    output1 = Dropout(0.2)(output1)
+
+    output1 = Dense(4)(output1)
+
+    # model = Model(inputs=[rho,src,dst], outputs=[output1])
+    model = Model(inputs=[src,dst], outputs=[output1])
+    model.compile(loss=mean_absolute_error, optimizer='adam',metrics=['accuracy'])
+
+    # 학습 데이터를 이용해서 학습
+    # model.fit([train_rho,train_src,train_dst], y_t, epochs=200, batch_size=20)
+    hist = model.fit([train_src,train_dst], y_t, epochs=1000, batch_size=20,validation_data=[[valid_src,valid_dst], y_train.iloc[v]] ,callbacks=[e_stop])
+    model.save(f"./model/{i}.h5")
+    i +=1
+    plt.plot(hist.history['loss'])
+    plt.show()
+    # 테스트 데이터를 이용해서 검증
+    # k_accuracy = '%.4f' % (model.evaluate([valid_rho,valid_src,valid_dst], y_train.iloc[v])[1])
+    k_accuracy = '%.4f' % (model.evaluate([valid_src,valid_dst], y_train.iloc[v])[1])
+    accuracy.append(k_accuracy)
+    '''
+    
+
+
+
+    
+
+
+print('\nK-fold cross validation Accuracy: {}'.format(accuracy))
+
+pre = model.predict(test,batch_size=1)
+pre = pd.DataFrame(pre,index=list(range),columns=['hhb','hbo2','ca','na'])
