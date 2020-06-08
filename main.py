@@ -17,7 +17,7 @@ import numpy as np
 from keras.models import Sequential, Model
 from keras.layers import Dense, Dropout,LSTM,Input
 from sklearn.model_selection import KFold
-from sklearn.preprocessing import StandardScaler,RobustScaler,Normalizer,MinMaxScaler #standard : 1.01, Robust,1.5, Normalizer1.7,
+from sklearn.preprocessing import StandardScaler,RobustScaler,Normalizer,MinMaxScaler #standard : 1.01, Robust,1.5, Normalizer1.7, Minmax: 1.47
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -27,9 +27,9 @@ from sklearn.decomposition import PCA
 from keras.layers.merge import concatenate
 from keras.losses import mean_absolute_error
 
-e_stop = EarlyStopping(monitor='loss',patience=30,mode='auto')
+e_stop = EarlyStopping(monitor='loss',patience=60,mode='auto')
 
-m_check = ModelCheckpoint(filepath=".\keras_prac\model\{epoch:02d}--{val_loss:.4f}.hdf5", monitor = 'val_loss',save_best_only=True)
+m_check = ModelCheckpoint(filepath=".\model\DACON--{epoch:02d}--{val_loss:.4f}.hdf5", monitor = 'val_loss',save_best_only=True)
 
 #데이터 추출
 
@@ -65,14 +65,14 @@ test_dst = test.filter(regex='_dst$', axis=1)
 train_dst = train_dst.interpolate(methods='linear', axis=1)
 test_dst = test_dst.interpolate(methods='linear', axis=1)
 # train_dst.loc[train_dst[f"650_dst"].isnull(),'650_dst']
-print(test_dst.loc[:,'650_dst':].isnull().sum())
+# print(test_dst.loc[:,'650_dst':].isnull().sum())
 
 # print(train_dst.isnull().sum())
 
 
-print(train_dst.isnull().sum())
+# print(train_dst.isnull().sum())
 
-print(test_dst.isnull().sum())
+# print(test_dst.isnull().sum())
 
 # 스팩트럼 데이터에서 보간이 되지 않은 값은 앞뒤 값의 평균으로 일괄 처리한다.
 
@@ -86,6 +86,9 @@ for i in range(980,640,-10):
 # 
 train.update(train_dst) # 보간한 데이터를 기존 데이터프레임에 업데이트 한다.
 test.update(test_dst)
+# drop_col = train[train.loc[:,'650_dst':'990_dst'].sum()].index
+# train = train.drop(drop_col)
+# print(train.head())
 # 
 
 
@@ -131,7 +134,7 @@ y_col = list(y_train)
 
 #스케일링
 
-sclar = MinMaxScaler()
+sclar = StandardScaler()
 sclar.fit(x_train)
 x_train = sclar.transform(x_train)
 
@@ -144,8 +147,10 @@ test = pd.DataFrame(test, columns=x_col)
 test_src = test.loc[:,'650_src':'990_src']
 test_rho = test.loc[:,'rho']
 test_dst = test.loc[:,'650_dst':'990_dst']
-'''
-'''
+
+# decom = PCA(n_components=3)
+# decom.fit()
+
 i = 0
 # print(x_train.shape, y_train.shape)
 skf = KFold(n_splits=5,shuffle=True)
@@ -168,10 +173,10 @@ for t, v in skf.split(x_train):
     dst = Input(shape= (35,))
     src = Input(shape= (35,))
 
-    dense1 = Dense(100,activation='relu')(dst)
+    dense1 = Dense(1000,activation='relu')(dst)
     dense1 = Dropout(0.2)(dense1)
 
-    dense2 = Dense(100,activation='relu')(src)
+    dense2 = Dense(1000,activation='relu')(src)
     dense2 = Dropout(0.2)(dense2)
 
 
@@ -192,7 +197,7 @@ for t, v in skf.split(x_train):
     model.compile(loss=mean_absolute_error, optimizer='adam',metrics=['accuracy'])
 
     # 학습 데이터를 이용해서 학습
-    hist = model.fit([train_rho,train_src,train_dst], y_t, epochs=200, batch_size=20)
+    hist = model.fit([train_rho,train_src,train_dst], y_t, epochs=1000, batch_size=20,validation_data=[[valid_rho,valid_src,valid_dst], y_train.iloc[v]],callbacks=[e_stop,m_check])
     model.save(f"./model/{i}.h5")
     i +=1
     plt.plot(hist.history['loss'])
@@ -201,58 +206,63 @@ for t, v in skf.split(x_train):
     k_accuracy = '%.4f' % (model.evaluate([valid_rho,valid_src,valid_dst], y_train.iloc[v])[1])
     accuracy.append(k_accuracy)
 
-    '''
-    #거리를 제곱해서 변수에서 뺀 모델링
+    
+    
+    # #거리를 제곱해서 변수에서 뺀 모델링
 
-    print(x_t.head())
-    # train_rho = x_t.loc[:,'rho']
-    train_src = x_t.loc[:,'650_src':'990_src']
-    train_dst = x_t.loc[:,'650_dst':'990_dst']
-    # valid_rho = x_v.loc[:,'rho']
-    valid_src = x_v.loc[:,'650_src':'990_src']
-    valid_dst = x_v.loc[:,'650_dst':'990_dst']
+    # print(x_t.head())
+    # # train_rho = x_t.loc[:,'rho']
+    # train_src = x_t.loc[:,'650_src':'990_src']
+    # train_dst = x_t.loc[:,'650_dst':'990_dst']
+    # # valid_rho = x_v.loc[:,'rho']
+    # valid_src = x_v.loc[:,'650_src':'990_src']
+    # valid_dst = x_v.loc[:,'650_dst':'990_dst']
 
-    # rho = Input(shape = (1,))
-    dst = Input(shape= (35,))
-    src = Input(shape= (35,))
+    # # rho = Input(shape = (1,))
+    # dst = Input(shape= (35,))
+    # src = Input(shape= (35,))
 
-    dense1 = Dense(100,activation='relu')(dst)
-    dense1 = Dropout(0.2)(dense1)
-
-    dense2 = Dense(100,activation='relu')(src)
-    dense2 = Dropout(0.2)(dense2)
-
-
-    # dense1 = Dense(100,activation='relu')(dense1)
+    # dense1 = Dense(100,activation='relu')(dst)
     # dense1 = Dropout(0.2)(dense1)
 
-    # dense2 = Dense(100,activation='relu')(dense2)
+    # dense2 = Dense(100,activation='relu')(src)
     # dense2 = Dropout(0.2)(dense2)
 
-    # merge = concatenate([rho,dense1,dense2])
-    merge = concatenate([dense1,dense2])
 
-    output1 = Dense(1000,activation='relu')(merge)
-    output1 = Dropout(0.2)(output1)
+    # # dense1 = Dense(100,activation='relu')(dense1)
+    # # dense1 = Dropout(0.2)(dense1)
 
-    output1 = Dense(4)(output1)
+    # # dense2 = Dense(100,activation='relu')(dense2)
+    # # dense2 = Dropout(0.2)(dense2)
 
-    # model = Model(inputs=[rho,src,dst], outputs=[output1])
-    model = Model(inputs=[src,dst], outputs=[output1])
-    model.compile(loss=mean_absolute_error, optimizer='adam',metrics=['accuracy'])
+    # # merge = concatenate([rho,dense1,dense2])
+    # merge = concatenate([dense1,dense2])
 
-    # 학습 데이터를 이용해서 학습
-    # model.fit([train_rho,train_src,train_dst], y_t, epochs=200, batch_size=20)
-    hist = model.fit([train_src,train_dst], y_t, epochs=1000, batch_size=20,validation_data=[[valid_src,valid_dst], y_train.iloc[v]] ,callbacks=[e_stop])
-    model.save(f"./model/{i}.h5")
-    i +=1
-    plt.plot(hist.history['loss'])
-    plt.show()
-    # 테스트 데이터를 이용해서 검증
-    # k_accuracy = '%.4f' % (model.evaluate([valid_rho,valid_src,valid_dst], y_train.iloc[v])[1])
-    k_accuracy = '%.4f' % (model.evaluate([valid_src,valid_dst], y_train.iloc[v])[1])
-    accuracy.append(k_accuracy)
-    '''
+    # output1 = Dense(1000,activation='relu')(merge)
+    # output1 = Dropout(0.2)(output1)
+
+    # output1 = Dense(4)(output1)
+
+    # # model = Model(inputs=[rho,src,dst], outputs=[output1])
+    # model = Model(inputs=[src,dst], outputs=[output1])
+    # model.compile(loss=mean_absolute_error, optimizer='adam',metrics=['accuracy'])
+
+    # # 학습 데이터를 이용해서 학습
+    # # model.fit([train_rho,train_src,train_dst], y_t, epochs=200, batch_size=20)
+    # hist = model.fit([train_src,train_dst], y_t, epochs=1000, batch_size=20,validation_data=[[valid_src,valid_dst], y_train.iloc[v]] ,callbacks=[e_stop])
+    # model.save(f"./model/{i}.h5")
+    # i +=1
+    # plt.plot(hist.history['loss'])
+    # plt.show()
+    # # 테스트 데이터를 이용해서 검증
+    # # k_accuracy = '%.4f' % (model.evaluate([valid_rho,valid_src,valid_dst], y_train.iloc[v])[1])
+    # k_accuracy = '%.4f' % (model.evaluate([valid_src,valid_dst], y_train.iloc[v])[1])
+    # accuracy.append(k_accuracy)
+    
+    
+    pre = model.predict(test,batch_size=1)
+    pre = pd.DataFrame(pre,index=list(range),columns=['hhb','hbo2','ca','na'])
+    pre.to_csv(f'./data/{i}.csv')
     
 
 
@@ -261,6 +271,3 @@ for t, v in skf.split(x_train):
 
 
 print('\nK-fold cross validation Accuracy: {}'.format(accuracy))
-
-pre = model.predict(test,batch_size=1)
-pre = pd.DataFrame(pre,index=list(range),columns=['hhb','hbo2','ca','na'])
