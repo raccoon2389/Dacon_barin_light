@@ -94,8 +94,8 @@ test_dst = test.loc[:,'650_dst':'990_dst']
 model = load_model('./model/dacon--496--1.5830.hdf5')
 
 y = model.predict([test_src,test_dst])
-df = pd.DataFrame(y,index={id:range(10000,20000,1)},columns=['hhb','hbo2','ca','na'])
-
+df = pd.DataFrame(y,index=range(10000,20000,1),columns=['hhb','hbo2','ca','na'])
+df = df.rename(columns=['id','hhb','hbo2','ca','na'])
 print(df.head())
 
 df.to_csv('./submmision.csv')

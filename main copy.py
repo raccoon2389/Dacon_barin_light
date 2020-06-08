@@ -37,10 +37,12 @@ submission = pd.read_csv('data/sample_submission.csv')
 
 train_dst = train.filter(regex='_dst$', axis=1)
 test_dst = test.filter(regex='_dst$', axis=1)
+train_src = train.filter(regex='_src$', axis=1)
 
 #거리를 제곱해준다.
 
 dst_list = list(train_dst)
+src_list = list(train_src)
 
 for i in dst_list:
     train[i] = train[i]* (train['rho']**2)
@@ -76,14 +78,86 @@ for i in range(980,640,-10):
     train_dst.loc[train_dst[f"{i}_dst"].isnull(),f"{i}_dst"]=train_dst.loc[train_dst[f"{i}_dst"].isnull(),f"{i+10}_dst"] 
     test_dst.loc[test_dst[f"{i}_dst"].isnull(),f"{i}_dst"]=test_dst.loc[test_dst[f"{i}_dst"].isnull(),f"{i+10}_dst"]
 
+
 # print(test_dst.head())
 # 
 train.update(train_dst) # 보간한 데이터를 기존 데이터프레임에 업데이트 한다.
 test.update(test_dst)
 # 
 
+#src -dst gap
+gap_feature = []
+
+for i in range(650,1000,10):
+    gap_feature.append(str(i)+'_gap')
+
+alpha=pd.DataFrame(np.array(train[src_list]) - np.array(train[dst_list]), columns=gap_feature, index=train.index)
+beta =pd.DataFrame(np.array(test[src_list])-np.array(test[dst_list]), columns=gap_feature, index = test.index)
+
+train = pd.concat((train,alpha), axis=1)
+test = pd.concat((test, beta),axis=1)
+
+eps = 1e-10
+
+for dst_col, src_col in zip(dst_list,src_list):
+    dst_val = train[dst_col]
+    src_val = train[src_col]+ eps
+    delta_ratio = dst_val / src_val
+    train[f"{dst_col}_{src_col}_ratio"]= delta_ratio
+    dst_val = test[dst_col]
+    src_val = test[src_col]+ eps
+    delta_ratio = dst_val / src_val
+    test[f"{dst_col}_{src_col}_ratio"]= delta_ratio
 
 
+alpha_real = train[dst_list]
+alpha_img = train[dst_list]
+
+beta_real = test[dst_list]
+beta_img = test[dst_list]
+
+for i in alpha.index:
+    alpha_real.loc[i] = alpha_real.loc[i] - alpha_real.loc[i].mean()
+    alpha_img.loc[i] = alpha_img.loc[i] - alpha_img.loc[i].mean()
+
+    alpha_real.loc[i] = np.fft.fft(alpha_real.loc[i], norm='ortho').real
+    alpha_img.loc[i] = np.fft.fft(alpha_real.loc[i], norm='ortho').imag
+
+for i in beta_real.index:
+    beta_real.loc[i] = beta_real.loc[i] - beta_real.loc[i].mean()
+    beta_img.loc[i] = beta_img.loc[i] - beta_img.loc[i].mean()
+
+    beta_real.loc[i] = np.fft.fft(beta_real.loc[i], norm='ortho').real
+    beta_img.loc[i] = np.fft.fft(beta_real.loc[i], norm='ortho').imag
+
+real_part =[]
+img_part = []
+
+for col in dst_list:
+    real_part.append(col + '_fft_real')
+    img_part.append(col + '_fft_img')
+
+alpha_real.columms = real_part
+alpha_img.columns = img_part
+alpha = pd.concat((alpha_real, alpha_img),axis=1)
+
+beta_real.columms = real_part
+beta_img.columns = img_part
+beta = pd.concat((beta_real, beta_img),axis=1)
+
+train = pd.concat((train,alpha), axis=1)
+test = pd.concat((test,beta),axis=1)
+
+train = train.drop(columns=src_list)
+test = test.drop(columns=src_list)
+
+print(train)
+
+train.to_csv('./data/pre_train.csv')
+test.to_csv('./data/pre_test.csv')
+
+
+'''
 # print(df.shape)
 # col = range(650,1000,10)
 
@@ -134,6 +208,8 @@ test_src = test.loc[:,'650_src':'990_src']
 test_rho = test.loc[:,'rho']
 test_dst = test.loc[:,'650_dst':'990_dst']
 '''
+
+
 '''
 # print(x_train.shape, y_train.shape)
 skf = KFold(n_splits=5,shuffle=True)
@@ -154,9 +230,9 @@ for t, v in skf.split(x_train):
     dst = Input(shape= (35,))
     src = Input(shape= (35,))
 
-    dense1 = Dense(100,activation='relu')(dst)
+    dense1 = Dense(1000,activation='relu')(dst)
     dense1 = Dropout(0.4)(dense1)
-    dense2 = Dense(100,activation='relu')(src)
+    dense2 = Dense(1000,activation='relu')(src)
     dense2 = Dropout(0.4)(dense2)
 
 
@@ -164,7 +240,7 @@ for t, v in skf.split(x_train):
     # merge = concatenate([rho,dense1,dense2])
     merge = concatenate([dense1,dense2])
 
-    output1 = Dense(1000,activation='relu')(merge)
+    output1 = Dense(500,activation='relu')(merge)
     output1 = Dropout(0.4)(output1)
 
     output1 = Dense(4)(output1)
@@ -191,3 +267,4 @@ for t, v in skf.split(x_train):
 
 
 print('\nK-fold cross validation Accuracy: {}'.format(accuracy))
+'''
