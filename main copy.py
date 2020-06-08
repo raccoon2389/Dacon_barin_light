@@ -58,7 +58,7 @@ test_dst = test.filter(regex='_dst$', axis=1)
 
 train_dst = train_dst.interpolate(methods='linear', axis=1)
 test_dst = test_dst.interpolate(methods='linear', axis=1)
-
+ 
 # train_dst.loc[train_dst[f"650_dst"].isnull(),'650_dst']
 
 
