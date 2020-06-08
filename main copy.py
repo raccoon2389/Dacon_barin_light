@@ -10,10 +10,10 @@ na : 나트륨 농도
 '''
 
 import numpy as np
-from keras.models import Sequential, Model
+from keras.models import Sequential, Model,load_model
 from keras.layers import Dense, Dropout,LSTM,Input
 from sklearn.model_selection import KFold
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -22,11 +22,12 @@ from keras.callbacks import EarlyStopping,ModelCheckpoint
 from sklearn.decomposition import PCA
 from keras.layers.merge import concatenate
 from keras.losses import mean_absolute_error
+from sklearn.ensemble import RandomForestRegressor
 
 e_stop = EarlyStopping(monitor='loss',patience=30,mode='auto')
 
 m_check = ModelCheckpoint(filepath=".\model\dacon--{epoch:02d}--{val_loss:.4f}.hdf5", monitor = 'val_loss',save_best_only=True)
-
+'''
 #데이터 추출
 
 train = pd.read_csv('data/train.csv',index_col=0)
@@ -155,9 +156,13 @@ print(train)
 
 train.to_csv('./data/pre_train.csv')
 test.to_csv('./data/pre_test.csv')
-
-
 '''
+
+
+
+
+
+
 # print(df.shape)
 # col = range(650,1000,10)
 
@@ -191,6 +196,9 @@ test.to_csv('./data/pre_test.csv')
 # print(test_dst.head())
 
 
+'''
+
+
 x_train = train.loc[:,'rho':'990_dst']
 x_col = list(x_train)
 print(x_col)
@@ -210,43 +218,68 @@ test_dst = test.loc[:,'650_dst':'990_dst']
 '''
 
 
+train = pd.read_csv('./data/pre_train.csv',index_col=0,header=0)
+test = pd.read_csv('./data/pre_test.csv',index_col=0,header=0)
+
+y_train = train.loc[:,'hhb':'na']
+x_train = train.drop(['hhb','hbo2','ca','na'],axis=1)
+print(x_train)
+x_pred = train.drop(['hhb','hbo2','ca','na'],axis=1)
+
+# pca = PCA(n_components=20)
+# pca.fit(x_train)
+# x_train = pca.transform(x_train)
+# x_pred = pca.transform(x_pred)
+
+scal = MinMaxScaler()
+scal.fit(x_train)
+x_train =scal.transform(x_train)
+x_pred = scal.transform(x_pred)
+
+
+# ml = RandomForestRegressor()
+
+# ml.fit(x_train,y_train)
+'''
+model = Sequential()
+model.add(Dense(1000,activation='relu',input_dim=x_train.shape[1]))
+model.add(Dense(100,activation='relu'))
+model.add(Dense(100,activation='relu'))
+model.add(Dense(4))
+
+model.compile(optimizer='adadelta',metrics=[mean_absolute_error], loss=mean_absolute_error)
+model.fit(x_train,y_train,batch_size=60,epochs=1000,validation_split=0.25,callbacks=[e_stop,m_check])
+'''
+
+model = load_model('./model/dacon--257--1.6422.hdf5')
+
+y = model.predict(x_pred)
+df = pd.DataFrame(y,index=range(10000,20000,1),columns=['hhb','hbo2','ca','na'])
+# df = df.rename(columns=['id','hhb','hbo2','ca','na'])
+print(df.head())
+
+df.to_csv('./submmision.csv')
 '''
 # print(x_train.shape, y_train.shape)
 skf = KFold(n_splits=5,shuffle=True)
 accuracy = []
 for t, v in skf.split(x_train):
-    x_t , y_t = x_train.iloc[t], y_train.iloc[t]
-    x_v = x_train.iloc[v]
-
-    # print(x_t.head())
-    # train_rho = x_t.loc[:,'rho']
-    train_src = x_t.loc[:,'650_src':'990_src']
-    train_dst = x_t.loc[:,'650_dst':'990_dst']
-    # valid_rho = x_v.loc[:,'rho']
-    valid_src = x_v.loc[:,'650_src':'990_src']
-    valid_dst = x_v.loc[:,'650_dst':'990_dst']
+    x_t , y_t = x_train[t], y_train[t]
+    x_v , y_v = x_train[v], y_train[v]
 
     # rho = Input(shape = (1,))
-    dst = Input(shape= (35,))
-    src = Input(shape= (35,))
+    dst = Input(shape= (x_train.shape[1],))
 
     dense1 = Dense(1000,activation='relu')(dst)
     dense1 = Dropout(0.4)(dense1)
-    dense2 = Dense(1000,activation='relu')(src)
-    dense2 = Dropout(0.4)(dense2)
 
-
-
-    # merge = concatenate([rho,dense1,dense2])
-    merge = concatenate([dense1,dense2])
-
-    output1 = Dense(500,activation='relu')(merge)
+    output1 = Dense(500,activation='relu')(dense1)
     output1 = Dropout(0.4)(output1)
 
     output1 = Dense(4)(output1)
 
     # model = Model(inputs=[rho,src,dst], outputs=[output1])
-    model = Model(inputs=[src,dst], outputs=[output1])
+    model = Model(inputs=[dst], outputs=[output1])
 
     
 
@@ -256,13 +289,13 @@ for t, v in skf.split(x_train):
 
     # 학습 데이터를 이용해서 학습
     # model.fit([train_rho,train_src,train_dst], y_t, epochs=200, batch_size=20)
-    hist = model.fit([train_src,train_dst], y_t, epochs=500, batch_size=100, callbacks=[m_check], validation_data=[[valid_src,valid_dst],y_train.iloc[v]])
+    hist = model.fit(x_t, y_t, epochs=500, batch_size=100, callbacks=[m_check], validation_data=[x_t,y_v])
 
     # plt.plot(hist.history['loss'])
     # plt.show()
     # 테스트 데이터를 이용해서 검증
     # k_accuracy = '%.4f' % (model.evaluate([valid_rho,valid_src,valid_dst], y_train.iloc[v])[1])
-    k_accuracy = '%.4f' % (model.evaluate([valid_src,valid_dst], y_train.iloc[v])[1])
+    k_accuracy = '%.4f' % (model.evaluate(x_v, y_v)[1])
     accuracy.append(k_accuracy)
 
 
