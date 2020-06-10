@@ -12,7 +12,7 @@ na : 나트륨 농도
 import numpy as np
 from keras.models import Sequential, Model,load_model
 from keras.layers import Dense, Dropout,LSTM,Input
-from sklearn.model_selection import KFold
+from sklearn.model_selection import KFold, cross_val_score, train_test_split
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -22,8 +22,10 @@ from keras.callbacks import EarlyStopping,ModelCheckpoint
 from sklearn.decomposition import PCA
 from keras.layers.merge import concatenate
 from keras.losses import mean_absolute_error
-from sklearn.ensemble import RandomForestRegressor
-
+from sklearn.ensemble import RandomForestRegressor,GradientBoostingRegressor
+from sklearn import metrics
+from sklearn.multioutput import MultiOutputRegressor
+from xgboost import XGBRFRegressor
 e_stop = EarlyStopping(monitor='loss',patience=30,mode='auto')
 
 m_check = ModelCheckpoint(filepath=".\model\dacon--{epoch:02d}--{val_loss:.4f}.hdf5", monitor = 'val_loss',save_best_only=True)
@@ -231,34 +233,46 @@ x_pred = train.drop(['hhb','hbo2','ca','na'],axis=1)
 # x_train = pca.transform(x_train)
 # x_pred = pca.transform(x_pred)
 
-scal = MinMaxScaler()
-scal.fit(x_train)
-x_train =scal.transform(x_train)
-x_pred = scal.transform(x_pred)
+# scal = MinMaxScaler()
+# scal.fit(x_train)
+# x_train =scal.transform(x_train)
+# x_pred = scal.transform(x_pred)
 
 
 # ml = RandomForestRegressor()
 
 # ml.fit(x_train,y_train)
+#############################################
 '''
-model = Sequential()
-model.add(Dense(1000,activation='relu',input_dim=x_train.shape[1]))
-model.add(Dense(100,activation='relu'))
-model.add(Dense(100,activation='relu'))
-model.add(Dense(4))
+kf = KFold(shuffle=True)
 
-model.compile(optimizer='adadelta',metrics=[mean_absolute_error], loss=mean_absolute_error)
-model.fit(x_train,y_train,batch_size=60,epochs=1000,validation_split=0.25,callbacks=[e_stop,m_check])
+x_tr , x_te, y_tr, y_te = train_test_split(x_train, y_train, test_size= 0.25, shuffle = True)
+
+multi_ran_fo = MultiOutputRegressor(GradientBoostingRegressor(random_state=0))
+ran_fo = RandomForestRegressor(random_state=66)
+# scores = cross_val_score(multi_ran_fo,x_train,y_train,cv=kf,n_jobs=-1)
+multi_ran_fo.fit(x_tr,y_tr)
+scores = multi_ran_fo.score(x_te,y_te)
+y = multi_ran_fo.predict(x_te)
+print(scores)
+
 '''
 
-model = load_model('./model/dacon--257--1.6422.hdf5')
+#############################################
 
-y = model.predict(x_pred)
+model = XGBRFRegressor(learning_rate=0.1)
+model.fit(x_train,y_train)
+y = model.predict(test)
+#output
+# model = load_model('./model/dacon--257--1.6422.hdf5')
+
+# y = model.predict(x_pred)
 df = pd.DataFrame(y,index=range(10000,20000,1),columns=['hhb','hbo2','ca','na'])
 # df = df.rename(columns=['id','hhb','hbo2','ca','na'])
 print(df.head())
 
 df.to_csv('./submmision.csv')
+
 '''
 # print(x_train.shape, y_train.shape)
 skf = KFold(n_splits=5,shuffle=True)
