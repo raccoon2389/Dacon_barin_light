@@ -285,7 +285,7 @@ def train_model(x_data, y_data, k=5):
 
             }
         # model = xgb.train(params=params, dtrain=d_train, num_boost_round=1000, verbose_eval=1000, evals=wlist) # 모델을 짜준다
-        model =  RandomizedSearchCV(xgb.XGBRFRegressor(),param_distributions=params,n_iter=41,n_jobs=-1)
+        model =  RandomizedSearchCV(,param_distributions=params,n_iter=41,n_jobs=-1)
         model.fit(d_train)
         models.append(model)
     
