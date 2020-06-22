@@ -300,20 +300,26 @@ for i in range(4):
     thresholds = np.sort(xg.feature_importances_)
 
     print(thresholds)
-
+    models = [] # 빈 모델 배열 생성
+    res = np.array([]) #빈 결과값 배열 생성 
     for thres in thresholds: 
         selection = SelectFromModel(xg, threshold=thres,prefit=True) #중요하지 않는 컬럼부터 하나씩 빼면서 트레이닝한다
                                             #median
         selection_x_train = selection.transform(x_train)
-        model2 = RandomizedSearchCV(xgb.XGBRFRegressor(),params,n_iter=50,n_jobs=4)
-        model2.fit(selection_x_train,y_train[:,i])
+        model2 = xgb.XGBRegressor(n_estimators=1000)
         selection_x_test = selection.transform(x_test)
-        
-        score = model2.score(selection_x_test,y_test[:,i])
-        
-        # print(selection_x_train.shape)
+        model2.fit(selection_x_train,y_train,verbose=True,eval_metric='mae',eval_set=[(selection_x_train,y_train),(selection_x_test,y_test)],early_stopping_rounds=20)
+        result = model2.evals_result()
+        score = model2.score(selection_x_test,y_test)
+        shape = selection_x_train.shape
+        models.append(model2) # 모델을 전부 배열에 저장
         print(thres,score)
-
+        res = np.append(res,score)# 결과값을 전부 배열에 저장
+    print(res.shape)
+    best_idx = res.argmax() # 결과값에 최대값의 index 저장
+    score = res[best_idx]   # 위 인덱스 기반으로 점수호출
+    total_col = x_train.shape[1]-best_idx # 전체컬럼 계산
+    models[best_idx].save_model(f"./model/boston--{score}--{total_col}--.model") 
             
 '''
 # print(x_train.shape, y_train.shape)
