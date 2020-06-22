@@ -13,8 +13,8 @@ import numpy as np
 from numpy.random import randint
 # from keras.models import Sequential, Model,load_model
 # from keras.layers import Dense, Dropout,LSTM,Input
-from sklearn.model_selection import KFold, cross_val_score, train_test_split,RandomizedSearchCV
-from sklearn.preprocessing import StandardScaler, MinMaxScaler
+from sklearn.model_selection import KFold, cross_val_score, train_test_split,RandomizedSearchCV,cross_validate
+# from sklearn.preprocessing import StandardScaler, MinMaxScaler
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -27,6 +27,9 @@ from sklearn.ensemble import RandomForestRegressor,GradientBoostingRegressor
 from sklearn import metrics
 from sklearn.multioutput import MultiOutputRegressor
 import xgboost as xgb
+from sklearn.multioutput import MultiOutputRegressor
+from sklearn.feature_selection import SelectFromModel
+
 # e_stop = EarlyStopping(monitor='loss',patience=30,mode='auto')
 
 # m_check = ModelCheckpoint(filepath=".\model\dacon--{epoch:02d}--{val_loss:.4f}.hdf5", monitor = 'val_loss',save_best_only=True)
@@ -219,15 +222,17 @@ test_src = test.loc[:,'650_src':'990_src']
 test_rho = test.loc[:,'rho']
 test_dst = test.loc[:,'650_dst':'990_dst']
 '''
-
+a=[]
+for i in range(650,1000,10):
+    a.append(f"{i}_dst")
 
 train = pd.read_csv('./data/pre_train.csv',index_col=0,header=0)
 test = pd.read_csv('./data/pre_test.csv',index_col=0,header=0)
 submission = pd.read_csv('./data/sample_submission.csv',index_col=0,header=0)
-y_train = train.loc[:,'hhb':'na']
-x_train = train.drop(['hhb','hbo2','ca','na'],axis=1)
-print(x_train)
-x_pred = train.drop(['hhb','hbo2','ca','na'],axis=1)
+y = train.loc[:,'hhb':'na'].values
+x = train.drop(a+['hhb','hbo2','ca','na'],axis=1).values
+# print(x_train)
+x_pred = train.drop(['hhb','hbo2','ca','na'],axis=1).values
 
 # pca = PCA(n_components=20)
 # pca.fit(x_train)
@@ -260,52 +265,56 @@ print(scores)
 '''
 
 #############################################
-def train_model(x_data, y_data, k=5):
-    models = []
-    
-    k_fold = KFold(n_splits=k, shuffle=True, random_state=123)
-    
-    for train_idx, val_idx in k_fold.split(x_data):
-        x_train, y_train = x_data.iloc[train_idx], y_data.values[train_idx] # 훈련 데이터를 kfold로 자른다
-        x_val, y_val = x_data.iloc[val_idx], y_data[val_idx] # 검증용 데이터도 자름
-    
-        d_train = xgb.DMatrix(data = x_train, label = y_train) # 훈련 데이터를 xgb가 이용하기 쉬운 DMatrix로 변환해준다
-        d_val = xgb.DMatrix(data = x_val, label = y_val)
+
+x_train,x_test, y_train,y_test = train_test_split(x,y,test_size=0.2,shuffle=True,random_state=13)
+
+
+
+# # model = RandomizedSearchCV(xgb.XGBRFRegressor(),param_distributions=params,n_iter=1,n_jobs=-1,verbose=1,cv=2)
+# model = MultiOutputRegressor(xg,n_jobs=-1)
+# xg = xgb.XGBRFRegressor(learning_rate=1,max_depth=15,n_estimators=1000)
+
+# model.fit(x_train,y_train)
+# score = model.score(x_test,y_test)  
+# print(score)
+params = {                                          #파라미터
+    # 'objective': 'reg:squarederror',
+    # 'eval_metric': 'mae',
+    # 'seed':777,
+    # 'num_boost_round':randint(100,5000,30).tolist(),
+    'n_estimators' : randint(500,1000,2).tolist(),
+    'max_depth' : randint(2,40,2).tolist(),
+    'learning_rate' : [1,0.1]#np.linspace(0.001,2,100).tolist()
+
+    }
+
+for i in range(4):
+    xg = xgb.XGBRFRegressor(learning_rate=1,max_depth=15,n_estimators=1000)
+
+    xg.fit(x_train,y_train[:,i])
+    score = xg.score(x_test,y_test[:,i])
+    print(score)
+
+
+
+    thresholds = np.sort(xg.feature_importances_)
+
+    print(thresholds)
+
+    for thres in thresholds: 
+        selection = SelectFromModel(xg, threshold=thres,prefit=True) #중요하지 않는 컬럼부터 하나씩 빼면서 트레이닝한다
+                                            #median
+        selection_x_train = selection.transform(x_train)
+        model2 = RandomizedSearchCV(xgb.XGBRFRegressor(),params,n_iter=50,n_jobs=4)
+        model2.fit(selection_x_train,y_train[:,i])
+        selection_x_test = selection.transform(x_test)
         
-        wlist = [(d_train, 'train'), (d_val, 'eval')]
+        score = model2.score(selection_x_test,y_test[:,i])
         
-        params = {                                          #파라미터
-            'objective': 'reg:squarederror',
-            'eval_metric': 'mae',
-            'seed':777,
-            'num_boost_round':randint(100,5000,30).tolist(),
-            'n_estimators' : randint(500,10000,30).tolist(),
-            'max_depth' : randint(2,40,30).tolist(),
-            'learning_rate' : np.linspace(0.001,2,100).tolist()
+        # print(selection_x_train.shape)
+        print(thres,score)
 
-            }
-        # model = xgb.train(params=params, dtrain=d_train, num_boost_round=1000, verbose_eval=1000, evals=wlist) # 모델을 짜준다
-        model =  RandomizedSearchCV(xgb.XGBRFRegressor(),param_distributions=params,n_iter=41,n_jobs=-1)
-        model.fit(d_train)
-        models.append(model)
-    
-    return models
-
-models = {}
-for label in y_train.columns:
-    print('train column : ', label)
-    models[label] = train_model(x_train, y_train[label])
-    print('\n\n\n')
-
-for col in models:
-    preds = []
-    for model in models[col]:
-        preds.append(model.predict(xgb.DMatrix(test)))
-    pred = np.mean(preds, axis=0)
-
-    submission[col] = pred
-submission.to_csv('Dacon.csv',index=True)
-
+            
 '''
 # print(x_train.shape, y_train.shape)
 skf = KFold(n_splits=5,shuffle=True)

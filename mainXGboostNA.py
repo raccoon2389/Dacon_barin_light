@@ -64,7 +64,7 @@ for i in dst_list:
 
 # train.update(train_dst) # 보간한 데이터를 기존 데이터프레임에 업데이트 한다.
 # test.update(test_dst)
-train = pd.read_csv('./data/pre_train.csv')
+train = pd.read_csv('data/pre_na.csv')
 test = pd.read_csv('./data/pre_test.csv')
 x_train = train.loc[:,'650_dst_fft_img':]
 print(x_train)
@@ -108,7 +108,7 @@ def train_model(x_data, y_data, k=5):
     return models
 
 models = {}
-for label in y_train.columns:
+for label in ['na']:
     print('train column : ', label)
     models[label] = train_model(x_train, y_train[label])
     print('\n\n\n')
@@ -120,4 +120,5 @@ for col in models:
     pred = np.mean(preds, axis=0)
 
     submission[col] = pred
-submission.to_csv('Dacon.csv',index=False)      
+submission.to_csv('na.csv',index=False)      
+

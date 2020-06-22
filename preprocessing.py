@@ -28,83 +28,28 @@ from keras.layers.merge import concatenate
 from keras.losses import mean_absolute_error
 from sklearn.model_selection import train_test_split
 
+
+
+
 #데이터 추출
 
 train = pd.read_csv('data/train.csv',index_col=0)
 test = pd.read_csv('data/test.csv', index_col=0)
 submission = pd.read_csv('data/sample_submission.csv')
-
-
-
-# print(train.dropna(axis= 0).head())
-
-# print(train.loc[:,'rho'])
-
-# train.dropna(axis=0).filter(regex='_dst$',axis=1).head().T.plot()
-# plt.show()
-'''
-q=0
-for i in range(700,950,10):
-    if i == 700: 
-        tmp = train.loc[train[f"{i-50}_dst"].notnull()&train[f"{i-40}_dst"].notnull()&train[f"{i-30}_dst"].notnull()& train[f"{i-20}_dst"].notnull()& train[f"{i-10}_dst"].notnull() & train[f"{i}_dst"].notnull()& train[f"{i+10}_dst"].notnull()&train[f"{i+20}_dst"].notnull()&train[f"{i+30}_dst"].notnull() &train[f"{i+40}_dst"].notnull()&train[f"{i+50}_dst"].notnull(), f"{i-50}_dst":f"{i+50}_dst"].values
-        print(tmp.shape)
-    else:
-        tmp = np.r_[tmp,train.loc[train[f"{i-50}_dst"].notnull()&train[f"{i-40}_dst"].notnull()&train[f"{i-30}_dst"].notnull()& train[f"{i-20}_dst"].notnull()& train[f"{i-10}_dst"].notnull() & train[f"{i}_dst"].notnull()& train[f"{i+10}_dst"].notnull()&train[f"{i+20}_dst"].notnull()&train[f"{i+30}_dst"].notnull() &train[f"{i+40}_dst"].notnull()&train[f"{i+50}_dst"].notnull(), f"{i-50}_dst":f"{i+50}_dst"].values]
-
-temp=np.zeros(11,)
-
-for i in tmp:
-    if i.sum() !=0:
-        np.array(i).reshape(11,)
-        temp = np.r_[temp,i]
-        print(i)
-
-print(temp)
-
-np.save('./data/temp.npy',arr= temp)
-'''
-
-tmp = np.load('./data/temp.npy')
-tmp = tmp.reshape(-1,11)
-print(tmp.shape)
-
-scaler = MinMaxScaler()
-
-
-pre_x = tmp[:,(0,1,2,3,4,6,7,8,9,10)]
-pre = pre_x[1]
-scaler.fit(pre_x)
-pre_x = scaler.transform(pre_x)
-pre_y = tmp[:,5]
-
-x_train,x_test , y_train, y_test = train_test_split(pre_x,pre_y, test_size=0.2)
-
-print(x_train.shape)
-
-model = Sequential()
-model.add(Dense(30,activation='relu',input_dim=x_train.shape[1]))
-model.add(Dense(20,activation='relu'))
-model.add(Dense(10,activation='relu'))
-model.add(Dense(1))
-
-model.add(Dense(1))
-
-model.compile(optimizer='adam',loss=mean_absolute_error,metrics=['acc'])
-model.fit(x_train,y_train,batch_size=100,epochs=10,validation_split=0.25)
-loss = model.evaluate(x_test,y_test,batch_size=100)
-print(loss)
-pred = model.predict(x_test,batch_size=100)
-print(pre,tmp[1],pred[1])
-
-'''
+na1 = train[train.loc[:,'650_src':'990_src'].idxmax(axis=1)=='710_src']
+na2 = train[train.loc[:,'650_src':'990_src'].idxmax(axis=1)=='910_src']
+na_train_idx = pd.concat([na1,na2],axis=0).index
+print(na_train_idx)
 #dst와 src 분할
 
 train_dst = train.filter(regex='_dst$', axis=1)
 test_dst = test.filter(regex='_dst$', axis=1)
+train_src = train.filter(regex='_src$', axis=1)
 
 #거리를 제곱해준다.
 
 dst_list = list(train_dst)
+src_list = list(train_src)
 
 for i in dst_list:
     train[i] = train[i]* (train['rho']**2)
@@ -116,14 +61,16 @@ train_dst = train.filter(regex='_dst$', axis=1)
 test_dst = test.filter(regex='_dst$', axis=1)
 
 
-
-
 # print(train_dst)
 
 train_dst = train_dst.interpolate(methods='linear', axis=1)
 test_dst = test_dst.interpolate(methods='linear', axis=1)
+ 
 # train_dst.loc[train_dst[f"650_dst"].isnull(),'650_dst']
+
+
 print(test_dst.loc[:,'650_dst':].isnull().sum())
+
 
 # print(train_dst.isnull().sum())
 
@@ -139,44 +86,82 @@ for i in range(980,640,-10):
     test_dst.loc[test_dst[f"{i}_dst"].isnull(),f"{i}_dst"]=test_dst.loc[test_dst[f"{i}_dst"].isnull(),f"{i+10}_dst"]
 
 
-
 # print(test_dst.head())
 # 
 train.update(train_dst) # 보간한 데이터를 기존 데이터프레임에 업데이트 한다.
 test.update(test_dst)
 # 
 
+#src -dst gap
+gap_feature = []
+
+for i in range(650,1000,10):
+    gap_feature.append(str(i)+'_gap')
+
+alpha=pd.DataFrame(np.array(train[src_list]) - np.array(train[dst_list]), columns=gap_feature, index=train.index)
+beta =pd.DataFrame(np.array(test[src_list])-np.array(test[dst_list]), columns=gap_feature, index = test.index)
+
+train = pd.concat((train,alpha), axis=1)
+test = pd.concat((test, beta),axis=1)
+
+eps = 1e-10
+
+for dst_col, src_col in zip(dst_list,src_list):
+    dst_val = train[dst_col]
+    src_val = train[src_col]+ eps
+    delta_ratio = dst_val / src_val
+    train[f"{dst_col}_{src_col}_ratio"]= delta_ratio
+    dst_val = test[dst_col]
+    src_val = test[src_col]+ eps
+    delta_ratio = dst_val / src_val
+    test[f"{dst_col}_{src_col}_ratio"]= delta_ratio
 
 
-# print(df.shape)
-# col = range(650,1000,10)
+alpha_real = train[dst_list]
+alpha_img = train[dst_list]
 
-# x_train = df
+beta_real = test[dst_list]
+beta_img = test[dst_list]
 
-#데이터 분석
+for i in alpha.index:
+    alpha_real.loc[i] = alpha_real.loc[i] - alpha_real.loc[i].mean()
+    alpha_img.loc[i] = alpha_img.loc[i] - alpha_img.loc[i].mean()
 
-# train.filter(regex='_src$',axis=1)[16:20].T.plot()
-# train.filter(regex='_dst$',axis=1)[0:5].T.plot()
-# plt.figure(figsize=(4,12))
+    alpha_real.loc[i] = np.fft.fft(alpha_real.loc[i], norm='ortho').real
+    alpha_img.loc[i] = np.fft.fft(alpha_real.loc[i], norm='ortho').imag
 
-# sns.heatmap(train.corr().loc['rho':'990_dst','hhb':].abs())
-# sns.heatmap(train.corr().loc['650_dst':'990_dst','650_src':'990_src'].abs())
-# sns.heatmap(train.corr().loc['650_src':'990_src','650_dst':'990_dst'].abs().plot())
-# plt.show()
+for i in beta_real.index:
+    beta_real.loc[i] = beta_real.loc[i] - beta_real.loc[i].mean()
+    beta_img.loc[i] = beta_img.loc[i] - beta_img.loc[i].mean()
+
+    beta_real.loc[i] = np.fft.fft(beta_real.loc[i], norm='ortho').real
+    beta_img.loc[i] = np.fft.fft(beta_real.loc[i], norm='ortho').imag
+
+real_part =[]
+img_part = []
+
+for col in dst_list:
+    real_part.append(col + '_fft_real')
+    img_part.append(col + '_fft_img')
+
+alpha_real.columms = real_part
+alpha_img.columns = img_part
+alpha = pd.concat((alpha_real, alpha_img),axis=1)
+
+beta_real.columms = real_part
+beta_img.columns = img_part
+beta = pd.concat((beta_real, beta_img),axis=1)
+
+train = pd.concat((train,alpha), axis=1)
+test = pd.concat((test,beta),axis=1)
+
+train = train.drop(columns=src_list)
+test = test.drop(columns=src_list)
+
+print(train)
+train.iloc[na_train_idx,:].to_csv('./data/pre_na.csv')
+train.to_csv('./data/pre_train.csv')
+test.to_csv('./data/pre_test.csv')
 
 
 
-# print(train.head())
-# test.head()
-# msno.matrix(train)
-# msno.matrix(test)
-# print(train.isnull().sum()[train.isnull().sum().values > 0])
-# print(train.isnull().sum()[train.isnull().sum().values > 0].index)
-
-# train_dst.head().T.plot()
-# test_dst.head().T.plot()
-# plt.show()
-# print(train_dst.head())
-
-# print(test_dst.head())
-'''
