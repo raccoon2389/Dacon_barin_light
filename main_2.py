@@ -288,6 +288,7 @@ params = {                                          #파라미터
 
     }
 
+
 for i in range(4):
     xg = xgb.XGBRFRegressor(learning_rate=1,max_depth=15,n_estimators=1000)
 
@@ -315,12 +316,14 @@ for i in range(4):
         models.append(model2) # 모델을 전부 배열에 저장
         print(thres,score)
         res = np.append(res,score)# 결과값을 전부 배열에 저장
+        
     print(res.shape)
     best_idx = res.argmax() # 결과값에 최대값의 index 저장
     score = res[best_idx]   # 위 인덱스 기반으로 점수호출
     total_col = x_train.shape[1]-best_idx # 전체컬럼 계산
-    models[best_idx].save_model(f"./model/boston--{score}--{total_col}--.model") 
-            
+    models[best_idx].save_model(f"./model/{i}--{score}--{total_col}--.model") 
+
+
 '''
 # print(x_train.shape, y_train.shape)
 skf = KFold(n_splits=5,shuffle=True)

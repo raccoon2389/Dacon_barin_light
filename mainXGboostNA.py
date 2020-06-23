@@ -81,8 +81,8 @@ def train_model(x_data, y_data, k=5):
     k_fold = KFold(n_splits=k, shuffle=True, random_state=123)
     
     for train_idx, val_idx in k_fold.split(x_data):
-        x_train, y_train = x_data.iloc[train_idx], y_data.values[train_idx] # 훈련 데이터를 kfold로 자른다
-        x_val, y_val = x_data.iloc[val_idx], y_data[val_idx] # 검증용 데이터도 자름
+        x_train, y_train = x_data[train_idx], y_data.values[train_idx] # 훈련 데이터를 kfold로 자른다
+        x_val, y_val = x_data[val_idx], y_data[val_idx] # 검증용 데이터도 자름
     
         d_train = xgb.DMatrix(data = x_train, label = y_train) # 훈련 데이터를 xgb가 이용하기 쉬운 DMatrix로 변환해준다
         d_val = xgb.DMatrix(data = x_val, label = y_val)
@@ -110,7 +110,7 @@ def train_model(x_data, y_data, k=5):
 models = {}
 for label in ['na']:
     print('train column : ', label)
-    models[label] = train_model(x_train, y_train[label])
+    models[label] = train_model(x_train.values, y_train[label])
     print('\n\n\n')
 
 for col in models:
