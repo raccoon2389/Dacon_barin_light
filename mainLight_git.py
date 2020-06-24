@@ -66,57 +66,71 @@ for i in dst_list:
 # test.update(test_dst)
 train = pd.read_csv('./data/git_train.csv',index_col=0)
 test = pd.read_csv('./data/git_test.csv',index_col=0)
-x_train = train.drop(columns=['hhb','hbo2','ca','na'])
-print(x_train)
-x_train = train.loc[:,"650_dst_650_src_ratio":]
-x_col = list(x_train)
-y_train = train.loc[:,'hhb':'na']
-y_col = list(y_train)
-test = test.loc[:,"650_dst_650_src_ratio":]
 
+x = train
+y= np.load('./y_train.npy')
+y_col = ['hhb','hbo2','ca','na']
+
+x_h_train = pd.read_csv('./data/pre_train.csv')
+x_h_train = x_h_train.drop(columns=['hhb','hbo2','ca','na'])
+x_h_test = pd.read_csv('./data/pre_test.csv')
+
+print(x.values.shape)
+print(x_h_train.shape)
 
 kf=KFold(n_splits=7)
 def train_model(x_data, y_data, k=5):
     model_zip = []
     i=0
     for train_idx,val_idx in kf.split(x_data):
-        x_train, y_train = x_data.iloc[train_idx],y_data[train_idx]
-        x_val,y_val = x_data.iloc[val_idx],y_data[val_idx]
+        x_train, y_train = x_data[train_idx],y_data[train_idx]
+        x_val,y_val = x_data[val_idx],y_data[val_idx]
         train_set = lightgbm.Dataset(data = x_train, label = y_train)
         val_set = lightgbm.Dataset(data=x_val,label=y_val)
         param = {
             'objective' : 'regression_l1',
-            'num_iterations' : 1000,
+            'num_iterations' : 10000,
             'learning_rate' : 0.07,
-            'num_leaves' : 20,
+            'num_leaves' : 50,
             'min_data_in_leaf' : 20,
             'tree_learner' : 'serial',
             'num_thread': 6,
-            'max_depth': 6,
+            'max_depth': 30,
             'max_bin' : 255,
             'device_type' : 'gpu',
             'gpu_platform_id' : 1,
             'gpu_device_id' : 0
             }
-        model = lightgbm.train(params=param,train_set=train_set,num_boost_round=1000,valid_sets=val_set,valid_names=f"{i}번째 CV", verbose_eval=1000)
+        model = lightgbm.train(params=param,train_set=train_set,num_boost_round=10000,valid_sets=val_set,valid_names=f"{i}번째 CV", verbose_eval=10000,early_stopping_rounds=100)
 
         model_zip.append(model)
         i+=1
     
     return model_zip
 
-models = {}
-for label in y_train.columns:
-    print('train column : ', label)
-    models[label] = train_model(x_train, y_train[label])
+models={}
+y_col=["hhb",'hbo2','ca','na']
+
+print('train column : ', y_col[0])
+models[y_col[0]] = train_model(x_h_train.values, y[:,0],10)
+
+
+
+
+for label in range(1,4):
+    print('train column : ', y_col[label])
+    models[y_col[label]] = train_model(x.values, y[:,label],10)
     print('\n\n\n')
 
 for col in models:
     preds = []
     for model in models[col]:
-        print(model)
-        preds.append(model.predict(lightgbm.Dataset(test)))
+        if col == 'hhb':
+            preds.append(model.predict(x_h_test))
+        else:
+            preds.append(model.predict(test.values))
     pred = np.mean(preds, axis=0)
 
     submission[col] = pred
-submission.to_csv('Dacon.csv',index=False)      
+submission.to_csv('Dacon_light.csv',index=False)      
+
