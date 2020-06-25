@@ -14,7 +14,7 @@ na 빠진거 모아서 모델링 하고 predict
 '''
 
 import numpy as np
-from sklearn.model_selection import KFold,GridSearchCV
+from sklearn.model_selection import KFold,GridSearchCV,train_test_split
 from sklearn.preprocessing import StandardScaler,RobustScaler,Normalizer,MinMaxScaler #standard : 1.01, Robust,1.5, Normalizer1.7, Minmax: 1.47
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -23,7 +23,9 @@ import missingno as msno
 from sklearn.decomposition import PCA
 import xgboost as xgb
 import lightgbm
-
+from sklearn.feature_selection import SelectFromModel
+from sklearn.ensemble import IsolationForest
+import pickle
 #데이터 추출
 
 # train = pd.read_csv('data/train.csv',index_col=0,header=0)
@@ -66,31 +68,31 @@ for i in dst_list:
 # test.update(test_dst)
 train = pd.read_csv('./data/git_train.csv',index_col=0)
 test = pd.read_csv('./data/git_test.csv',index_col=0)
-
+print(train)
+print(test)
 x = train
 y= np.load('./y_train.npy')
 y_col = ['hhb','hbo2','ca','na']
 
-x_h_train = pd.read_csv('./data/pre_train.csv')
-x_h_train = x_h_train.drop(columns=['hhb','hbo2','ca','na'])
-x_h_test = pd.read_csv('./data/pre_test.csv')
-
-print(x.values.shape)
-print(x_h_train.shape)
-
-kf=KFold(n_splits=7)
-def train_model(x_data, y_data, k=5):
-    model_zip = []
-    i=0
-    for train_idx,val_idx in kf.split(x_data):
-        x_train, y_train = x_data[train_idx],y_data[train_idx]
-        x_val,y_val = x_data[val_idx],y_data[val_idx]
-        train_set = lightgbm.Dataset(data = x_train, label = y_train)
-        val_set = lightgbm.Dataset(data=x_val,label=y_val)
-        param = {
+param = {
             'objective' : 'regression_l1',
             'num_iterations' : 10000,
-            'learning_rate' : 0.07,
+            'learning_rate' : 0.068,
+            'num_leaves' : 50,
+            'min_data_in_leaf' : 20,
+            'tree_learner' : 'serial',
+            'num_thread': 6,
+            'max_depth': 30,
+            'max_bin' : 255,
+            # 'device_type' : 'gpu',
+            # 'gpu_platform_id' : 1,
+            # 'gpu_device_id' : 0,
+            'verbosity' : -1
+            }
+params = {
+            'objective' : 'regression_l1',
+            'num_iterations' : 1000,
+            'learning_rate' : 0.1,
             'num_leaves' : 50,
             'min_data_in_leaf' : 20,
             'tree_learner' : 'serial',
@@ -99,38 +101,130 @@ def train_model(x_data, y_data, k=5):
             'max_bin' : 255,
             'device_type' : 'gpu',
             'gpu_platform_id' : 1,
-            'gpu_device_id' : 0
+            'gpu_device_id' : 0,
+            'verbosity' : -1
             }
-        model = lightgbm.train(params=param,train_set=train_set,num_boost_round=10000,valid_sets=val_set,valid_names=f"{i}번째 CV", verbose_eval=10000,early_stopping_rounds=100)
 
-        model_zip.append(model)
+
+
+def train_model(x_data, y_data, k=2):
+    kf=KFold(n_splits=k)
+    b_model = lightgbm.LGBMRegressor(num_leaves=50,max_depth=30,learning_rate=0.07,max_bin=255,n_estimators=2000,importance_type='split')
+    b_model.fit(x_data,y_data)
+    thresholds = np.sort(b_model.feature_importances_)
+    print(thresholds)
+
+    # thresholds = thresholds[thresholds>0]
+    thresholds = thresholds[:60]
+    print(thresholds)
+    model_in_thres = []
+    score_in_thres =[]
+    f_imp=[]
+    i=0
+
+    for thres in thresholds:
+        selects = SelectFromModel(b_model,threshold=thres,prefit=True)
+        select_x_train = selects.transform(x_data)
+        model_in_kf = []
+        score_in_kf = []
+        for train_idx,val_idx in kf.split(select_x_train):
+            
+            x_train, y_train = select_x_train[train_idx],y_data[train_idx]
+            x_val,y_val = select_x_train[val_idx],y_data[val_idx]
+            train_set = lightgbm.Dataset(data = x_train, label = y_train)
+            val_set = lightgbm.Dataset(data=x_val,label=y_val)
+            
+            model = lightgbm.train(params=params,train_set=train_set,num_boost_round=1000,valid_sets=val_set,valid_names=f"{i}번째 CV", verbose_eval=10000,early_stopping_rounds=30)
+            a = list(model.best_score.values())
+            a = list(a[0].values())
+            # print(a)
+            score_in_kf.append(a)
+            model_in_kf.append(model)
+            print(i,score_in_kf)
+        score_in_thres.append(np.mean(score_in_kf))
+        model_in_thres.append(model_in_kf)
         i+=1
+
+        f_imp.append(selects)
+    score_in_thres = np.array(score_in_thres)
+    best_idx = np.argmin(score_in_kf)
+    best_models = model_in_thres[best_idx]
+    # best_models= [0,1]
+    # best_selects= f_imp[0]
+    best_selects= f_imp[best_idx]
+    out = [best_models,best_selects]
     
-    return model_zip
+    return out
 
 models={}
 y_col=["hhb",'hbo2','ca','na']
 
-print('train column : ', y_col[0])
-models[y_col[0]] = train_model(x_h_train.values, y[:,0],10)
 
-
-
-
-for label in range(1,4):
+for label in range(0,4):
     print('train column : ', y_col[label])
-    models[y_col[label]] = train_model(x.values, y[:,label],10)
+    models[y_col[label]] = train_model(x.values, y[:,label],2)
     print('\n\n\n')
+
+print(models["hhb"])
+
+pickle.dump(models,open("./emergency.pickle","wb"))
+
+
+sel = pickle.load(open('./emergency.pickle','rb'))
+models = list(sel.values())
+
+def train_model(x_data, y_data,selects ,k=2, idx=0):
+    kf = KFold(n_splits=k)
+    models = []
+    i=0
+    selects = selects[1]
+    print(selects)
+
+    select_x_train = selects.transform(x_data)
+    
+        
+    for train_idx,val_idx in kf.split(select_x_train):
+        
+        x_train, y_train = select_x_train[train_idx],y_data[train_idx]
+        x_val,y_val = select_x_train[val_idx],y_data[val_idx]
+        train_set = lightgbm.Dataset(data = x_train, label = y_train)
+        val_set = lightgbm.Dataset(data=x_val,label=y_val)
+        print(select_x_train.shape[1])
+        model = lightgbm.train(params=param,train_set=train_set,num_boost_round=1000,valid_sets=val_set,valid_names=f"{i}번째 CV", verbose_eval=10000,early_stopping_rounds=100)
+        
+        models.append(model)
+        i+=1
+    
+    
+    return models
+
+models={}
+y_col=["hhb",'hbo2','ca','na']
+
+
+for label in range(0,4):
+    print('train column : ', y_col[label])
+    models[y_col[label]] = train_model(x.values, y[:,label],sel[y_col[label]],10,idx = label)
+    print('\n\n\n')
+
+
+pickle.dump(models,open('save_models.pickle','wb'))
+
+idx=0
+
+models = pickle.load(open('./save_models.pickle','rb'))
+print(models)
 
 for col in models:
     preds = []
+    select = sel[y_col[idx]][1]
+    select_test = select.transform(test.values)
     for model in models[col]:
-        if col == 'hhb':
-            preds.append(model.predict(x_h_test))
-        else:
-            preds.append(model.predict(test.values))
+        pre = model.predict(select_test)
+        print(pre)
+        preds.append(pre)
     pred = np.mean(preds, axis=0)
+    idx +=1
 
     submission[col] = pred
-submission.to_csv('Dacon_light.csv',index=False)      
-
+submission.to_csv('Dacon_model_sel.csv',index=False)      

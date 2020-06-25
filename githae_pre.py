@@ -73,7 +73,7 @@ train_src = train.filter(regex='_src$',axis=1).interpolate(limit_direction='both
 src_col = list(train_src)
 train_dst = train.filter(regex='_dst$',axis=1).interpolate(limit_direction='both',axis=1)
 dst_col = list(train_dst)
-train_damp = np.exp(np.pi*(25 - train["rho"].values)/4)
+train_damp = np.exp(np.pi*(25 - train["rho"].values)/3.44)
 # print(train_damp)
 # print(train_dst.iloc[0,:])
 for i in range(10000):
@@ -82,7 +82,7 @@ for i in range(10000):
 
 test_src = test.filter(regex='_src$',axis=1).interpolate(limit_direction='both',axis=1)
 test_dst = test.filter(regex='_dst$',axis=1).interpolate(limit_direction='both',axis=1)
-test_damp = np.exp(np.pi*(25 - test["rho"].values)/4)
+test_damp = np.exp(np.pi*(25 - test["rho"].values)/3.44)
 # tete = pd.DataFrame(np.zeros((10000,35)),columns=dst_col)
 for i in range(10000):
     test_dst.iloc[i,:] = test_dst.iloc[i,:]/test_damp[i] # 선형보간법
@@ -214,13 +214,13 @@ train_ratio = pd.DataFrame(train_src.values/(train_dst.values+small),columns=lis
 train_fft_real = pd.DataFrame(train_fu_real,columns = list(range(650,1000,10))).add_suffix('_real')
 train_fft_img = pd.DataFrame(train_fu_imag,columns = list(range(650,1000,10))).add_suffix('_imag')
 
-train_df = pd.concat([train_dst,train_gap,train_ratio,train_fft_real,train_fft_img],axis=1)
+train_df = pd.concat([train["rho"]**2,train_dst,train_gap,train_ratio,train_fft_real,train_fft_img],axis=1)
 # train_df = pd.concat([train_dst,train_gap,train_ratio,train_fft_real,train_fft_img,train.loc[:,"hhb":"na"]],axis=1)
 
 train_df.index.name = "id"
 
 
-test_df = pd.DataFrame(index=list(range(10000,20000,1)))
+test_df = pd.DataFrame()
 
 test_gap = pd.DataFrame(test_src.values - test_dst.values,columns=list(range(650,1000,10))).add_suffix('_gap')
 
@@ -228,7 +228,8 @@ test_ratio = pd.DataFrame(test_dst.values/(test_src.values+small),columns=list(r
 test_fft_real = pd.DataFrame(test_fu_real,columns = list(range(650,1000,10))).add_suffix('_real')
 test_fft_img = pd.DataFrame(test_fu_imag,columns = list(range(650,1000,10))).add_suffix('_imag')
 
-test_df = pd.concat([test_dst,test_gap,test_ratio,test_fft_real,test_fft_img],axis=1)
+test_df = pd.concat([test["rho"]**2,test_dst,test_gap,test_ratio,test_fft_real,test_fft_img],axis=1)
+test_df.index=list(range(10000,20000,1))
 test_df.index.name = "id"
 train_df.to_csv('./data/git_train.csv')
 test_df.to_csv('./data/git_test.csv')

@@ -22,7 +22,7 @@ import seaborn as sns
 import missingno as msno
 from sklearn.decomposition import PCA
 import xgboost as xgb
-import lightgbm
+from sklearn.feature_selection import SelectFromModel
 
 #데이터 추출
 
@@ -72,12 +72,20 @@ x_h_test = np.load('./x_pred.npy')
 
 x_h_test = x_h_test[:,1:]
 x_h_train = x_h_train[:,1:]
-
+params = {                                          #파라미터
+            'objective': 'reg:squarederror',
+            'eval_metric': 'mae',
+            'seed':777,
+            'gpu_id':0,
+            'tree_method':'gpu_hist'
+                        }
 def train_model(x_data, y_data, k=5):
     models = []
     
     k_fold = KFold(n_splits=k, shuffle=True, random_state=123)
-    
+    d_train = xgb.DMatrix(data = x_data, label = y_data)
+
+
     for train_idx, val_idx in k_fold.split(x_data):        
         x_train, y_train = x_data[train_idx], y_data[train_idx] # 훈련 데이터를 kfold로 자른다
         x_val, y_val = x_data[val_idx], y_data[val_idx] # 검증용 데이터도 자름
@@ -87,18 +95,6 @@ def train_model(x_data, y_data, k=5):
         
         wlist = [(d_train, 'train'), (d_val, 'eval')]
         
-        params = {                                          #파라미터
-            'objective': 'reg:squarederror',
-            'eval_metric': 'mae',
-            'seed':777,
-            'gpu_id':0,
-            'tree_method':'gpu_hist'
-                        }
-
-
-        pa = {
-            
-        }   
         
         model = xgb.train(params=params, dtrain=d_train, num_boost_round=10000, verbose_eval=10000, evals=wlist,early_stopping_rounds=300) # 모델을 짜준다 
         # GridSearchCV(model
