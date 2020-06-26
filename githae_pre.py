@@ -73,7 +73,7 @@ train_src = train.filter(regex='_src$',axis=1).interpolate(limit_direction='both
 src_col = list(train_src)
 train_dst = train.filter(regex='_dst$',axis=1).interpolate(limit_direction='both',axis=1)
 dst_col = list(train_dst)
-train_damp = np.exp(np.pi*(25 - train["rho"].values)/3.44)
+train_damp = np.exp(np.pi*(10 - train["rho"].values)/3.44)
 # print(train_damp)
 # print(train_dst.iloc[0,:])
 for i in range(10000):
@@ -82,7 +82,7 @@ for i in range(10000):
 
 test_src = test.filter(regex='_src$',axis=1).interpolate(limit_direction='both',axis=1)
 test_dst = test.filter(regex='_dst$',axis=1).interpolate(limit_direction='both',axis=1)
-test_damp = np.exp(np.pi*(25 - test["rho"].values)/3.44)
+test_damp = np.exp(np.pi*(10 - test["rho"].values)/3.44)
 # tete = pd.DataFrame(np.zeros((10000,35)),columns=dst_col)
 for i in range(10000):
     test_dst.iloc[i,:] = test_dst.iloc[i,:]/test_damp[i] # 선형보간법
@@ -163,20 +163,15 @@ for i in range(10000):
     # tmp_x = 0
     # tmp_y = 0
     for j in range(35):
-        if train_src.iloc[i, j] == 0:
-            train_dst.iloc[i,j] = 0
-        #     tmp_x += 1
-        #     train_src[i,j] = 0
-        #     train_dst[i,j] = 0
-        if train_src.iloc[i, j] - train_dst.iloc[i, j] < 0:
-             train_dst.iloc[i,j] =train_src.iloc[i,j] 
-        if test_src.iloc[i, j] == 0:
-            test_dst.iloc[i,j] - 0
-        #     tmp_y += 1
-        #     test_src[i,j] = 0
-        #     test_dst[i,j] = 0
-        if test_src.iloc[i, j] - test_dst.iloc[i, j] < 0:
-            test_dst.iloc[i,j] =test_src.iloc[i,j] 
+        if train_src.iloc[i, j] == 0 and train_dst.iloc[i, j] != 0:
+                # train_src[i,j] = 1e-10
+            train_src.iloc[i, j] = train_dst.iloc[i, j]
+            # train_dst[i,j] = 0
+
+        if test_src.iloc[i, j] == 0 and test_dst.iloc[i, j] != 0:
+            # test_src[i,j] = 1e-10
+            test_src.iloc[i, j] = test_dst.iloc[i, j]
+            # test_dst[i,j] = 0
     # if tmp_x > max_train:
     #     max_train = tmp_x
     # if tmp_y > max_test:

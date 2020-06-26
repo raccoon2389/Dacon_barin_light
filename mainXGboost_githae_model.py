@@ -14,7 +14,7 @@ na 빠진거 모아서 모델링 하고 predict
 '''
 
 import numpy as np
-from sklearn.model_selection import KFold,GridSearchCV,train_test_split
+from sklearn.model_selection import KFold,GridSearchCV
 from sklearn.preprocessing import StandardScaler,RobustScaler,Normalizer,MinMaxScaler #standard : 1.01, Robust,1.5, Normalizer1.7, Minmax: 1.47
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -22,10 +22,9 @@ import seaborn as sns
 import missingno as msno
 from sklearn.decomposition import PCA
 import xgboost as xgb
-import lightgbm
 from sklearn.feature_selection import SelectFromModel
-from sklearn.ensemble import IsolationForest
 import pickle
+from sklearn.metrics import mean_absolute_error
 #데이터 추출
 
 # train = pd.read_csv('data/train.csv',index_col=0,header=0)
@@ -44,6 +43,7 @@ dst_list = list(train_dst)
 
 for i in dst_list:
     train[i] = train[i]* (train['rho']**2)
+
 '''
 
 #dst와 src 업데이트
@@ -65,51 +65,20 @@ for i in dst_list:
 
 # train.update(train_dst) # 보간한 데이터를 기존 데이터프레임에 업데이트 한다.
 # test.update(test_dst)
-x = np.load('./x_train.npy')
-test = np.load('./x_pred.npy')
-y= np.load('./y_train.npy')
-y_col = ['hhb','hbo2','ca','na']
+x = pd.read_csv('./data/git_train.csv',index_col=0,header=0)
+y = np.load('./y_train.npy')
+test = pd.read_csv('./data/git_test.csv',index_col=0,header=0)
 
-param = {
-            'objective' : 'regression_l1',
-            'num_iterations' : 7000,
-            'learning_rate' : 0.068,
-            'num_leaves' : 144,
-            'min_data_in_leaf' : 20,
-            'tree_learner' : 'serial',
-            # 'boosting' : 'dart',
-            # 'drop_rate' : 0.3,
-            'num_thread': 6,
-            'max_depth': 7,
-            'max_bin' : 255,
-            'metric': 'mae',
-            'is_training_metric': True, 
-            'device_type' : 'gpu',
-            'gpu_platform_id' : 1,
-            'gpu_device_id' : 0,
-            'verbosity' : -1
-            }
-params = {
-            'objective' : 'regression_l1',
-            'num_iterations' : 1000,
-            'learning_rate' : 0.1,
-            'num_leaves' : 144,
-            'min_data_in_leaf' : 20,
-            'tree_learner' : 'serial',
-            'num_thread': 6,
-            'max_depth': 6,
-            'max_bin' : 255,
-            'device_type' : 'gpu',
-            'gpu_platform_id' : 1,
-            'gpu_device_id' : 0,
-            'verbosity' : -1
-            }
-
-
-
+params = {                                          #파라미터
+            'objective': 'reg:squarederror',
+            'eval_metric': 'mae',
+            'seed':777,
+            'gpu_id':0,
+            'tree_method':'gpu_hist'
+                        }
 def train_model(x_data, y_data, k=2):
     kf=KFold(n_splits=k)
-    b_model = lightgbm.LGBMRegressor(num_leaves=144,max_depth=7,learning_rate=0.07,max_bin=255,n_estimators=4000,importance_type='split')
+    b_model = xgb.XGBRegressor()
     b_model.fit(x_data,y_data)
     thresholds = np.sort(b_model.feature_importances_)
     print(thresholds)
@@ -131,17 +100,19 @@ def train_model(x_data, y_data, k=2):
             
             x_train, y_train = select_x_train[train_idx],y_data[train_idx]
             x_val,y_val = select_x_train[val_idx],y_data[val_idx]
-            train_set = lightgbm.Dataset(data = x_train, label = y_train)
-            val_set = lightgbm.Dataset(data=x_val,label=y_val)
-            
-            model = lightgbm.train(params=params,train_set=train_set,num_boost_round=1000,valid_sets=val_set,valid_names=f"{i}번째 CV", verbose_eval=10000,early_stopping_rounds=30)
-            a = list(model.best_score.values())
-            a = list(a[0].values())
-            t = selects.transform(test)
-            print(model.predict(t))
+            train_set =xgb.DMatrix(data = x_train, label = y_train)
+            val_set = xgb.DMatrix(data=x_val,label=y_val)
+            wlist = [(train_set, 'train'), (val_set, 'eval')]
+            model = xgb.train(params=params,dtrain=train_set,num_boost_round=1000,evals=wlist, verbose_eval=1000,early_stopping_rounds=100)
+            a = model.predict(xgb.DMatrix(x_val))
+            score = mean_absolute_error(y_val,a)
+            t = selects.transform(test.values)
+            b = model.predict(xgb.DMatrix(t))
+
             # print(a)
-            score_in_kf.append(a)
+            score_in_kf.append(score)
             model_in_kf.append(model)
+            print(b)
             print(i,score_in_kf)
         score_in_thres.append(np.mean(score_in_kf))
         model_in_thres.append(model_in_kf)
@@ -164,7 +135,7 @@ y_col=["hhb",'hbo2','ca','na']
 
 for label in range(0,4):
     print('train column : ', y_col[label])
-    models[y_col[label]] = train_model(x, y[:,label],3)
+    models[y_col[label]] = train_model(x.values, y[:,label],3)
     print('\n\n\n')
 
 print(models["hhb"])
@@ -189,10 +160,10 @@ def train_model(x_data, y_data,selects ,k=2, idx=0):
         
         x_train, y_train = select_x_train[train_idx],y_data[train_idx]
         x_val,y_val = select_x_train[val_idx],y_data[val_idx]
-        train_set = lightgbm.Dataset(data = x_train, label = y_train)
-        val_set = lightgbm.Dataset(data=x_val,label=y_val)
+        train_set = xgb.DMatrix(data = x_train, label = y_train)
+        val_set = xgb.DMatrix(data=x_val,label=y_val)
         print(select_x_train.shape[1])
-        model = lightgbm.train(params=param,train_set=train_set,num_boost_round=1000,valid_sets=val_set,valid_names=f"{i}번째 CV", verbose_eval=10000,early_stopping_rounds=100)
+        model = xgb.train(params=params,dtrain=train_set,num_boost_round=1000,evals=wlist, verbose_eval=10000,early_stopping_rounds=30)
         
         models.append(model)
         i+=1
@@ -207,7 +178,7 @@ y_col=["hhb",'hbo2','ca','na']
 for label in range(0,4):
     print(y_col[label])
     print('train column : ', y_col[label])
-    models[y_col[label]] = train_model(x, y[:,label],sel[y_col[label]],10,idx = label)
+    models[y_col[label]] = train_model(x.values, y[:,label],sel[y_col[label]],5,idx = label)
     print('\n\n\n')
 
 
@@ -221,7 +192,7 @@ print(models)
 for col in models:
     preds = []
     select = sel[y_col[idx]][1]
-    select_test = select.transform(test)
+    select_test = select.transform(test.values)
     for model in models[col]:
         pre = model.predict(select_test)
         print(pre)

@@ -14,7 +14,7 @@ na 빠진거 모아서 모델링 하고 predict
 '''
 
 import numpy as np
-from sklearn.model_selection import KFold,GridSearchCV
+from sklearn.model_selection import KFold,GridSearchCV,train_test_split
 from sklearn.preprocessing import StandardScaler,RobustScaler,Normalizer,MinMaxScaler #standard : 1.01, Robust,1.5, Normalizer1.7, Minmax: 1.47
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -23,7 +23,9 @@ import missingno as msno
 from sklearn.decomposition import PCA
 import xgboost as xgb
 import lightgbm
-
+from sklearn.feature_selection import SelectFromModel
+from sklearn.ensemble import IsolationForest
+import pickle
 #데이터 추출
 
 # train = pd.read_csv('data/train.csv',index_col=0,header=0)
@@ -64,25 +66,35 @@ for i in dst_list:
 
 # train.update(train_dst) # 보간한 데이터를 기존 데이터프레임에 업데이트 한다.
 # test.update(test_dst)
-x = pd.read_csv('./data/git_train.csv',index_col=0)
+train = pd.read_csv('./data/git_train.csv',index_col=0)
 test = pd.read_csv('./data/git_test.csv',index_col=0)
-y = np.load('./y_train.npy')
+print(train)
+print(test)
+x = train
+y= np.load('./y_train.npy')
+y_col = ['hhb','hbo2','ca','na']
 
-def train_model(x_data, y_data, k=5):
-    kf=KFold(n_splits=k)
-
-    model_zip = []
-    i=0
-    for train_idx,val_idx in kf.split(x_data):
-        x_train, y_train = x_data.iloc[train_idx],y_data[train_idx]
-        x_val,y_val = x_data.iloc[val_idx],y_data[val_idx]
-        train_set = lightgbm.Dataset(data = x_train, label = y_train)
-        val_set = lightgbm.Dataset(data=x_val,label=y_val)
-        param = {
+param = {
             'objective' : 'regression_l1',
             'num_iterations' : 1000,
-            'learning_rate' : 0.07,
-            'num_leaves' : 20,
+            'learning_rate' : 0.068,
+            'num_leaves' : 50,
+            # 'boosting_type' : 'dart',
+            'min_data_in_leaf' : 20,
+            'tree_learner' : 'serial',
+            'num_thread': 6,
+            'max_depth': 25,
+            'max_bin' : 255,
+            'device_type' : 'gpu',
+            'gpu_platform_id' : 1,
+            'gpu_device_id' : 0,
+            'verbosity' : -1
+            }
+params = {
+            'objective' : 'regression_l1',
+            'num_iterations' : 1000,
+            'learning_rate' : 0.1,
+            'num_leaves' : 50,
             'min_data_in_leaf' : 20,
             'tree_learner' : 'serial',
             'num_thread': 6,
@@ -90,24 +102,40 @@ def train_model(x_data, y_data, k=5):
             'max_bin' : 255,
             'device_type' : 'gpu',
             'gpu_platform_id' : 1,
-            'gpu_device_id' : 0
+            'gpu_device_id' : 0,
+            'verbosity' : -1
             }
-        model = lightgbm.train(params=param,train_set=train_set,num_boost_round=1000,valid_sets=val_set,valid_names=f"{i}번째 CV", verbose_eval=1000)
 
-        model_zip.append(model)
-        i+=1
-    # print("done")
-    return model_zip
 
-models = {}
+
+def train_model(x_data, y_data, k=2):
+    kf=KFold(n_splits=k)
+    i=0
+    model_in_kf = []
+    for train_idx,val_idx in kf.split(x_data):
+        
+        x_train, y_train = x_data[train_idx],y_data[train_idx]
+        x_val,y_val = x_data[val_idx],y_data[val_idx]
+        train_set = lightgbm.Dataset(data = x_train, label = y_train)
+        val_set = lightgbm.Dataset(data=x_val,label=y_val)
+        
+        model = lightgbm.train(params=param,train_set=train_set,num_boost_round=1000,valid_sets=val_set,valid_names=f"{i}번째 CV", verbose_eval=10000,early_stopping_rounds=30)
+        # print(a)
+        model_in_kf.append(model)
+        
+    
+    return model_in_kf
+
+models={}
 y_col=["hhb",'hbo2','ca','na']
 
-for label in range(4):
-    print("done")
+
+for label in range(0,4):
     print('train column : ', y_col[label])
-    # print(y[:,label])
-    models[y_col[label]] = train_model(x, y[:,label])
+    models[y_col[label]] = train_model(x.values, y[:,label],3)
     print('\n\n\n')
+
+idx=0
 
 for col in models:
     preds = []
@@ -116,6 +144,7 @@ for col in models:
         preds.append(pre)
         print(pre)
     pred = np.mean(preds, axis=0)
+    idx +=1
 
     submission[col] = pred
-submission.to_csv('Dacon.csv',index=False)      
+submission.to_csv('Dacon_model_test.csv',index=False)      

@@ -64,13 +64,19 @@ for i in dst_list:
 
 # train.update(train_dst) # 보간한 데이터를 기존 데이터프레임에 업데이트 한다.
 # test.update(test_dst)
-x = pd.read_csv('./data/git_train.csv',index_col=0)
+train = pd.read_csv('./data/git_train.csv',index_col=0)
 test = pd.read_csv('./data/git_test.csv',index_col=0)
-y = np.load('./y_train.npy')
+x_train = train.drop(columns=['hhb','hbo2','ca','na'])
+print(x_train)
+x_train = train.loc[:,"650_dst_650_src_ratio":]
+x_col = list(x_train)
+y_train = train.loc[:,'hhb':'na']
+y_col = list(y_train)
+test = test.loc[:,"650_dst_650_src_ratio":]
 
+
+kf=KFold(n_splits=7)
 def train_model(x_data, y_data, k=5):
-    kf=KFold(n_splits=k)
-
     model_zip = []
     i=0
     for train_idx,val_idx in kf.split(x_data):
@@ -96,25 +102,20 @@ def train_model(x_data, y_data, k=5):
 
         model_zip.append(model)
         i+=1
-    # print("done")
+    
     return model_zip
 
 models = {}
-y_col=["hhb",'hbo2','ca','na']
-
-for label in range(4):
-    print("done")
-    print('train column : ', y_col[label])
-    # print(y[:,label])
-    models[y_col[label]] = train_model(x, y[:,label])
+for label in y_train.columns:
+    print('train column : ', label)
+    models[label] = train_model(x_train, y_train[label])
     print('\n\n\n')
 
 for col in models:
     preds = []
     for model in models[col]:
-        pre = model.predict(test)
-        preds.append(pre)
-        print(pre)
+        print(model)
+        preds.append(model.predict(lightgbm.Dataset(test)))
     pred = np.mean(preds, axis=0)
 
     submission[col] = pred
